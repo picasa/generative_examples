@@ -1,0 +1,255 @@
+# hunting for attractors, source https://blog.k2h.se/post/hunting-for-attractors/
+
+```{r setup}
+library(tidyverse)
+library(future)
+library(furrr)
+
+plan(multiprocess)
+opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+theme_set(theme_void() + theme(legend.position = 'none'))
+
+set.seed(1)
+
+```
+
+
+```{r functions_math}
+# define difference equations for {x, y} coordinates (quadratic map)
+quadratic_2d <- function(a, xn, yn) {
+  xn1 <- a[1] + a[2]*xn + a[3]*xn*xn + a[ 4]*xn*yn + a[ 5]*yn + a[ 6]*yn*yn
+  yn1 <- a[7] + a[8]*xn + a[9]*xn*xn + a[10]*xn*yn + a[11]*yn + a[12]*yn*yn
+  
+  c(xn1, yn1)
+}
+
+# iterate quadratic map
+iterate <- function(step_fn, a, x0, y0, iterations) {
+  x <- rep(x0, iterations)
+  y <- rep(y0, iterations)
+  
+  for(n in 1:(iterations - 1)) {
+    xy <- step_fn(a, x[n], y[n])
+    x[n+1] <- xy[1]
+    y[n+1] <- xy[2]
+  }
+  
+  tibble(x = x, y = y) %>%
+    mutate(n = row_number())
+}
+
+
+
+```
+
+```{r functions_simulation}
+# define a function to estimate occurrence of a chaotic behaviour
+L <- function(step_fn, a, x0, y0, iterations = 1000) {
+  # Really, put the point nearby and see what happens
+  nearby_distance <- 0.000001
+  
+  xy <- c(x0, y0)
+  xy_near <- xy + c(nearby_distance, 0)
+  
+  # Collect the log distance ratios as we iterate
+  sum_log_distance_ratios <- 0
+  
+  for (n in 1:iterations) {
+    xy <- step_fn(a, xy[1], xy[2])
+    xy_near <- step_fn(a, xy_near[1], xy_near[2])
+    
+    new_distance = sqrt((xy[1] - xy_near[1])^2 + (xy[2] - xy_near[2])^2)
+    
+    if (new_distance == 0) {
+      # The points have converged
+      return (-Inf)
+    }
+    
+    if (abs(new_distance) == Inf) {
+      # The points have run away
+      return (Inf)
+    }
+    
+    # Move near point after xy
+    # We put the near point just behind in the direction that they differ
+    angle = atan2(xy_near[2] - xy[2], xy_near[1] - xy[1])
+    xy_near <- c(xy[1] + nearby_distance * cos(angle),
+                 xy[2] + nearby_distance * sin(angle))
+    
+    
+    sum_log_distance_ratios = sum_log_distance_ratios + log2(new_distance / nearby_distance)
+    
+  }
+  
+  sum_log_distance_ratios / iterations
+}
+
+# high resolution simulation of a single parameter set
+# each core is used for a different path with the same parameter set
+# data is binned by cells with n as the density of points in this cell
+render_print_data <- function(a, iterations, gridsize) {
+  CPU_cores <- parallel::detectCores()
+  
+  data <- tibble(thread = 1:CPU_cores) %>%
+    mutate(x0 = runif(length(thread), -0.1, 0.1),
+           y0 = runif(length(thread), -0.1, 0.1)) %>%
+    mutate(xy = future_pmap(
+      .,
+      function(x0, y0, ...) iterate(quadratic_2d, a, x0, y0, iterations / CPU_cores))
+      ) %>%
+    unnest(xy) 
+  
+  data_scaled <- data %>% 
+    mutate(range = max(max(x) - min(x), max(y) - min(y))) %>%
+    mutate(x = (x - min(x)) / range,
+           y = (y - min(y)) / range)
+  
+  data_density <- data_scaled %>%
+    group_by(x = round(x * gridsize) / gridsize,
+             y = round(y * gridsize) / gridsize) %>%
+    summarize(n = n())
+  
+  return(data_density)
+}
+
+
+```
+
+```{r functions_plot}
+# normalize coordinates for each simulated graph
+normalize_xy <- function(df) {
+  range <- with(df, max(max(x) - min(x), max(y) - min(y)))
+  
+  df %>%
+    mutate(x = (x - min(x)) / range,
+           y = (y - min(y)) / range)
+  
+}
+
+render_grid <- function(parameters, iterations) {
+  parameters %>%
+    mutate(xy = map(a, ~ iterate(quadratic_2d, ., 0, 0, iterations))) %>%
+    
+    # Remove those who have grown very large / might run away
+    filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
+    
+    mutate(xy = map(xy, normalize_xy)) %>%
+    
+    unnest(xy) %>%
+    ggplot(aes(x, y)) +
+    geom_point(size = 0, shape = 20, alpha = 0.1) +
+    coord_equal() +
+    facet_wrap(~ pattern)
+}
+
+```
+
+
+```{r map_henon}
+henon_a <- c(1, 0, -1.4, 0, 0.3, 0, 0, 1, 0, 0, 0, 0)
+
+data_map <- iterate(step_fn = quadratic_2d, a = henon_a, x0 = 0, y0 = 0, iterations = 5000)
+
+data_map %>%
+  ggplot(aes(x, y)) +
+  geom_point(size = 0, shape = 20, alpha = 0.2) + 
+  coord_equal() 
+
+# orbit diagram: x = f(a) in Henon map.
+henon_grid <- tibble(p = seq(-1.5, -1, length = 1000)) %>%
+  mutate(
+    a = map(p, ~ replace(henon_a, 3, .)),
+    xy = map(a, ~ iterate(quadratic_2d, ., 0, 0, 1000))
+  )
+
+plot_bifurcation <- henon_grid %>% select(-a) %>% unnest(xy) %>% 
+  filter(x > -1.5, x < 1.5) %>% 
+  ggplot(aes(x=-p, y=x)) +
+  geom_point(size = 0, shape = 20, alpha = 0.1) + theme_bw()
+
+plot_bifurcation_contour <- henon_grid %>% select(-a) %>% unnest(xy) %>% 
+  filter(x > -1.5, x < 1.5) %>% 
+  ggplot(aes(x=-p, y=x)) +
+  geom_density_2d() 
+
+ggsave(
+  plot_bifurcation,
+  file="./R/figures/attractor_orbit.png",
+  dpi=200, width = 6, height = 4, scale = 2)
+
+ggsave(
+  plot_bifurcation_contour,
+  file="./R/figures/attractor_coutour.png",
+  dpi=200, width = 4, height = 4, scale = 2)
+```
+
+
+```{r map_explore}
+L(quadratic_2d, henon_a, 0.01, 0.01)
+
+L(quadratic_2d, rep(0, 12), 0.01, 0.01)
+
+table_set <- tibble(pattern = 1:1000) %>%
+  mutate(a = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
+  mutate(L_val = map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
+  filter(L_val > 0)
+
+table_set %>% render_grid(5000)
+
+table_set %>%
+  filter(pattern == 694) %>%
+  render_grid(1E5) 
+
+```
+
+
+```{r map_print}
+table_set_focus <- table_set %>% filter(pattern == 694)
+
+data_print <- render_print_data(table_set_focus$a[[1]], iterations=2E6, gridsize=1000)
+
+plot_print <- data_print %>%
+  ggplot(aes(x, y)) +
+  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+  scale_color_distiller(palette = 'YlOrRd', direction = 1) +
+  coord_equal()
+
+```
+
+```{r map_print_example}
+data_print <- render_print_data(
+  a = c(-0.38, -0.60,  0.20, -0.79,  0.10,  0.54,  0.41, -0.59,  0.95, -1.19, -0.65, -0.66),
+  iterations = 4E6,
+  gridsize = 1000)
+
+plot_print <- data_print %>%
+  ggplot(aes(x, y)) +
+  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+  scale_color_gradientn(colors = lapply(colourlovers::clpalette(292482)$colors, function(c) paste0('#', c))) +
+  coord_equal()
+
+ggsave(plot_print, file="./R/figures/attractor_01.png", dpi=200, width = 4, height = 6, scale = 1)
+
+data_print <- render_print_data(
+  a = c(-0.16, -0.37, -0.27, 0.16, -0.66, -0.74, -1.11, -0.51, 0.59, 0.81, -0.06, -0.44),
+  iterations = 2000000,
+  gridsize = 1000)
+
+plot_print <- data_print %>%
+  ggplot(aes(x, y)) +
+    geom_point(aes(alpha = sqrt(n), color = sqrt(n)), size = 0, shape = 20) +
+    scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+    scale_color_gradientn(
+      colors = rev(lapply(colourlovers::clpalette(131576)$colors, function(c) paste0('#', c)))) +
+    coord_equal()
+
+ggsave(plot_print, file="./R/figures/attractor_02.png", dpi=200, width = 4, height = 6, scale = 1)
+```
+
+
+
+
+
+
