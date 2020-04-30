@@ -1,3 +1,3 @@
 # Generative art with #rstats
 
-Some experiments and remix of different sources on generative art.
+Some experiments and remix based on different sources on generative art.

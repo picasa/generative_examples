@@ -5,8 +5,8 @@ library(tidyverse)
 library(future)
 library(furrr)
 
-plan(multiprocess)
-opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+plan(multisession)
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 theme_set(theme_void() + theme(legend.position = 'none'))
 
 set.seed(1)
@@ -15,6 +15,14 @@ set.seed(1)
 
 
 ```{r functions_math}
+# define logistic map
+logistic <- function(a, xn, yn) {
+  xn1 <- a[1]*xn*(1 - xn)
+  yn1 <- 0
+  
+  c(xn1, yn1)
+}
+
 # define difference equations for {x, y} coordinates (quadratic map)
 quadratic_2d <- function(a, xn, yn) {
   xn1 <- a[1] + a[2]*xn + a[3]*xn*xn + a[ 4]*xn*yn + a[ 5]*yn + a[ 6]*yn*yn
@@ -43,7 +51,7 @@ iterate <- function(step_fn, a, x0, y0, iterations) {
 ```
 
 ```{r functions_simulation}
-# define a function to estimate occurrence of a chaotic behaviour
+# estimate occurrence of a chaotic behaviour
 L <- function(step_fn, a, x0, y0, iterations = 1000) {
   # Really, put the point nearby and see what happens
   nearby_distance <- 0.000001
@@ -84,10 +92,28 @@ L <- function(step_fn, a, x0, y0, iterations = 1000) {
   sum_log_distance_ratios / iterations
 }
 
+# estimate the quantile of density distribution per grid cell
+density_quantile <- function(data, gridsize=20) {
+  data %>%
+    group_by(x = ntile(x, gridsize), y = ntile(y, gridsize)) %>%
+    summarize(n = n()) %>% nrow()
+
+  # density_matrix <- with(data, MASS::kde2d(x, y, n=bin))$z
+}
+
+# low resolution simulation of a single parameter set
+compute_grid_data <- function(a, iterations, ...) {
+  a %>%
+    mutate(xy = future_map(a, ~ iterate(quadratic_2d, ., 0, 0, iterations))) %>%
+    # Remove those who have grown very large / might run away
+    filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
+    mutate(xy = map(xy, normalize_xy))
+}
+
 # high resolution simulation of a single parameter set
 # each core is used for a different path with the same parameter set
 # data is binned by cells with n as the density of points in this cell
-render_print_data <- function(a, iterations, gridsize) {
+compute_print_data <- function(a, iterations, gridsize, ...) {
   CPU_cores <- parallel::detectCores()
   
   data <- tibble(thread = 1:CPU_cores) %>%
@@ -126,15 +152,8 @@ normalize_xy <- function(df) {
   
 }
 
-render_grid <- function(parameters, iterations) {
-  parameters %>%
-    mutate(xy = map(a, ~ iterate(quadratic_2d, ., 0, 0, iterations))) %>%
-    
-    # Remove those who have grown very large / might run away
-    filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
-    
-    mutate(xy = map(xy, normalize_xy)) %>%
-    
+render_grid <- function(data) {
+  data %>%
     unnest(xy) %>%
     ggplot(aes(x, y)) +
     geom_point(size = 0, shape = 20, alpha = 0.1) +
@@ -142,20 +161,57 @@ render_grid <- function(parameters, iterations) {
     facet_wrap(~ pattern)
 }
 
+render_print <- function(data) {
+  plot <- data %>%
+    ggplot(aes(x, y)) +
+    geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+    scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+    scale_colour_gradient(low="white", high="black") +
+    coord_equal()
+  
+  return(plot)
+}
+
+```
+
+```{r map_logistic, eval=FALSE}
+logistic_r <- 3.9
+
+data_map <- iterate(step_fn = logistic, a = logistic_r, x0 = 0.01, y0=0, iterations = 100)
+
+plot_logistic <- data_map %>%
+  ggplot(aes(n, x)) +
+  geom_line(alpha = 0.2) 
+
+# bifurcation plot : x = f(r) in logistic map.
+logistic_grid <- tibble(r = seq(0, 4, length = 1000)) %>%
+  mutate(xy = map(r, ~ iterate(logistic, ., 0.01, 0, 500)))
+
+plot_bifurcation <- logistic_grid %>% unnest(xy) %>% 
+  # group_by(r, x = round(x * 1000) / 1000) %>%
+  # summarize(n = n()) %>% 
+  ggplot(aes(x=r, y=x)) +
+  geom_point(size = 0, shape = 20, alpha=0.1) + theme_bw()
+
+ggsave(
+  plot_bifurcation,
+  file="./R/figures/attractor_logistic_bifurcation.png",
+  dpi=200, width = 6, height = 4, scale = 2)
+
 ```
 
 
-```{r map_henon}
+```{r map_henon, eval=FALSE}
 henon_a <- c(1, 0, -1.4, 0, 0.3, 0, 0, 1, 0, 0, 0, 0)
 
 data_map <- iterate(step_fn = quadratic_2d, a = henon_a, x0 = 0, y0 = 0, iterations = 5000)
 
-data_map %>%
+plot_henon <- data_map %>%
   ggplot(aes(x, y)) +
   geom_point(size = 0, shape = 20, alpha = 0.2) + 
   coord_equal() 
 
-# orbit diagram: x = f(a) in Henon map.
+# bifurcation plot : x = f(a) in Henon map.
 henon_grid <- tibble(p = seq(-1.5, -1, length = 1000)) %>%
   mutate(
     a = map(p, ~ replace(henon_a, 3, .)),
@@ -167,58 +223,116 @@ plot_bifurcation <- henon_grid %>% select(-a) %>% unnest(xy) %>%
   ggplot(aes(x=-p, y=x)) +
   geom_point(size = 0, shape = 20, alpha = 0.1) + theme_bw()
 
-plot_bifurcation_contour <- henon_grid %>% select(-a) %>% unnest(xy) %>% 
-  filter(x > -1.5, x < 1.5) %>% 
-  ggplot(aes(x=-p, y=x)) +
-  geom_density_2d() 
-
 ggsave(
   plot_bifurcation,
-  file="./R/figures/attractor_orbit.png",
+  file="./R/figures/attractor_henon_bifurcation.png",
   dpi=200, width = 6, height = 4, scale = 2)
 
-ggsave(
-  plot_bifurcation_contour,
-  file="./R/figures/attractor_coutour.png",
-  dpi=200, width = 4, height = 4, scale = 2)
 ```
 
 
 ```{r map_explore}
-L(quadratic_2d, henon_a, 0.01, 0.01)
+# L(quadratic_2d, henon_a, 0.01, 0.01)
+# L(quadratic_2d, rep(0, 12), 0.01, 0.01)
 
-L(quadratic_2d, rep(0, 12), 0.01, 0.01)
-
-table_set <- tibble(pattern = 1:1000) %>%
+# sample parameter space and filter interesting solutions based on Henrik Lindberg method
+table_set <- tibble(pattern = 1:20000) %>%
   mutate(a = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
   mutate(L_val = map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
   filter(L_val > 0)
 
-table_set %>% render_grid(5000)
+# cluster maps based on point density distribution
+data_set <- table_set %>%
+  compute_grid_data(5000) %>% 
+  mutate(density = map_int(xy, density_quantile, gridsize=20))
 
-table_set %>%
-  filter(pattern == 694) %>%
-  render_grid(1E5) 
+plot_cluster <- data_set %>%
+  ggplot(aes(x=density, y=as.factor(pattern))) +
+  geom_point() + geom_vline(xintercept = 200) + theme_bw()
 
+plot_set_volume <- data_set %>% filter(density >= 200) %>% render_grid()
+plot_set_discard <- data_set %>% filter(density < 150) %>% render_grid()
+plot_set <- data_set %>% filter(density >= 150) %>% render_grid()
+
+plot_set_focus <- data_set %>%
+  filter(pattern == 11813) %>%
+  compute_grid_data(5E5) %>% 
+  render_grid() 
+
+ggsave(
+  plot_set + facet_wrap(vars(pattern), ncol=15),
+  file="./R/figures/attractor_set.png",
+  dpi=200, width = 5, height = 8.5, scale = 2)
+
+ggsave(
+  plot_set_discard + facet_wrap(vars(pattern), ncol=15),
+  file="./R/figures/attractor_set_discard.png",
+  dpi=200, width = 5, height = 8.5, scale = 2)
+
+list_selected_volume_01 <- c(
+  683, 1269, 1594, # 976
+  2213, 2527, 2670,
+  3236, 3339, 4548
+)
+
+list_selected_lines_01 <- c(
+  75, 2364, 529,
+  1820, 2691, 3066,
+  3723, 4120, 4668
+)
+
+# properties for selected maps 
+# table_set %>% filter(pattern %in% list_selected_volume)
+# table_set %>% filter(pattern %in% list_selected_lines)
 ```
 
 
-```{r map_print}
-table_set_focus <- table_set %>% filter(pattern == 694)
+```{r map_print_single}
 
-data_print <- render_print_data(table_set_focus$a[[1]], iterations=2E6, gridsize=1000)
+data_print <- table_set %>%
+  filter(pattern == 11813) %>%
+  compute_print_data(a=.$a[[1]], iterations=2E6, gridsize=1000) 
 
-plot_print <- data_print %>%
-  ggplot(aes(x, y)) +
+plot_print <- data_print %>% 
+  ggplot(aes(x, y)) + 
   geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
   scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
-  scale_color_distiller(palette = 'YlOrRd', direction = 1) +
+  scale_colour_gradient(low="white", high="black") +
   coord_equal()
 
 ```
 
+```{r map_print_nine}
+
+# volume serie
+data_print_volume <- table_set %>%
+  filter(pattern %in% list_selected_volume) %>% 
+  mutate(
+    data = map(a, compute_print_data, iteration=1E6, gridsize=1000),
+    plot = map(data, render_print)
+  )
+
+plot_print_volume <- cowplot::plot_grid(plotlist = data_print_volume$plot)
+
+ggsave(plot_print_volume, file="./R/figures/attractor_set_volume_01.png", dpi=300, width=6, height=8.5, scale=2)
+
+# lines serie
+data_print_lines <- table_set %>%
+  filter(pattern %in% list_selected_lines) %>% 
+  mutate(
+    data = map(a, compute_print_data, iteration=1E6, gridsize=1000),
+    plot = map(data, render_print)
+  )
+
+plot_print_lines <- cowplot::plot_grid(plotlist = data_print_lines$plot)
+
+ggsave(plot_print_lines, file="./R/figures/attractor_set_lines_01.png", dpi=300, width=6, height=8.5, scale=2)
+
+```
+
+
 ```{r map_print_example}
-data_print <- render_print_data(
+data_print <- compute_print_data(
   a = c(-0.38, -0.60,  0.20, -0.79,  0.10,  0.54,  0.41, -0.59,  0.95, -1.19, -0.65, -0.66),
   iterations = 4E6,
   gridsize = 1000)
@@ -232,7 +346,7 @@ plot_print <- data_print %>%
 
 ggsave(plot_print, file="./R/figures/attractor_01.png", dpi=200, width = 4, height = 6, scale = 1)
 
-data_print <- render_print_data(
+data_print <- compute_print_data(
   a = c(-0.16, -0.37, -0.27, 0.16, -0.66, -0.74, -1.11, -0.51, 0.59, 0.81, -0.06, -0.44),
   iterations = 2000000,
   gridsize = 1000)

@@ -33,12 +33,12 @@ sample_path <- function(data, n=400, weight=5, xlim=range(data$x)) {
 }
 
 # generate data
-sample_path(data, n=3000, weight=3) %>% ggplot(aes(x, -y)) + geom_path(alpha=0.1) + coord_fixed() 
+sample_path(data, n=4000, weight=4) %>% ggplot(aes(x, -y)) + geom_path(alpha=0.1) + coord_fixed() 
 
 # parameters | jean : 3000, 5, c(250,1100) | arthur : 4000, 3, c(200,1100) | pierre : 5000, 3
 n_sample <- 1:16
-n_point <- 5000
-value_weight <- 3
+n_point <- 4000
+value_weight <- 4
 xlim <- c(200,1100)
 
 data_plot <- future_map(
@@ -54,7 +54,7 @@ saveRDS(data_plot, file=glue::glue("data/tsp_{name}.rds"), compress="gzip")
 # data_plot <- readRDS("data/tsp_jean.rds")
 
 plot_portrait <- data_plot %>% 
-  filter(id %in% 4) %>% 
+  filter(id %in% 16) %>% 
   #filter(id %in% sample(n_sample, 2)) %>% 
   ggplot(aes(x, -y, group=id)) +
   #geom_point(alpha=0.1, size=0.5) +
