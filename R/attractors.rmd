@@ -111,9 +111,26 @@ compute_grid_data <- function(a, iterations, ...) {
 }
 
 # high resolution simulation of a single parameter set
+compute_print_data <- function(a, iterations, gridsize, ...) {
+  data <- iterate(quadratic_2d, a, x0=0, y0=0, iterations) 
+  
+  data_scaled <- data %>% 
+    mutate(range = max(max(x) - min(x), max(y) - min(y))) %>%
+    mutate(x = (x - min(x)) / range,
+           y = (y - min(y)) / range)
+  
+  data_density <- data_scaled %>%
+    group_by(x = round(x * gridsize) / gridsize,
+             y = round(y * gridsize) / gridsize) %>%
+    summarize(n = n())
+  
+  return(data_density)
+}
+
+# high resolution simulation of a single parameter set
 # each core is used for a different path with the same parameter set
 # data is binned by cells with n as the density of points in this cell
-compute_print_data <- function(a, iterations, gridsize, ...) {
+compute_parallel_data <- function(a, iterations, gridsize, ...) {
   CPU_cores <- parallel::detectCores()
   
   data <- tibble(thread = 1:CPU_cores) %>%
@@ -236,9 +253,9 @@ ggsave(
 # L(quadratic_2d, rep(0, 12), 0.01, 0.01)
 
 # sample parameter space and filter interesting solutions based on Henrik Lindberg method
-table_set <- tibble(pattern = 1:20000) %>%
+table_set <- tibble(pattern = 1:30000) %>%
   mutate(a = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
-  mutate(L_val = map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
+  mutate(L_val = future_map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
   filter(L_val > 0)
 
 # cluster maps based on point density distribution
@@ -250,24 +267,45 @@ plot_cluster <- data_set %>%
   ggplot(aes(x=density, y=as.factor(pattern))) +
   geom_point() + geom_vline(xintercept = 200) + theme_bw()
 
+plot_set_keep <- data_set %>% filter(density >= 120) %>% render_grid()
+plot_set_discard <- data_set %>% filter(density < 120) %>% render_grid()
 plot_set_volume <- data_set %>% filter(density >= 200) %>% render_grid()
-plot_set_discard <- data_set %>% filter(density < 150) %>% render_grid()
-plot_set <- data_set %>% filter(density >= 150) %>% render_grid()
 
 plot_set_focus <- data_set %>%
-  filter(pattern == 11813) %>%
-  compute_grid_data(5E5) %>% 
+  filter(pattern == 23069) %>%
+  compute_grid_data(1E6) %>% 
   render_grid() 
 
 ggsave(
-  plot_set + facet_wrap(vars(pattern), ncol=15),
-  file="./R/figures/attractor_set.png",
-  dpi=200, width = 5, height = 8.5, scale = 2)
+  plot_set_keep + facet_wrap(vars(pattern), ncol=20),
+  file="./R/figures/attractor_set_keep.png",
+  dpi=200, width = 7, height = 7, scale = 2)
 
 ggsave(
-  plot_set_discard + facet_wrap(vars(pattern), ncol=15),
+  plot_set_discard + facet_wrap(vars(pattern), ncol=20),
   file="./R/figures/attractor_set_discard.png",
-  dpi=200, width = 5, height = 8.5, scale = 2)
+  dpi=200, width = 7, height = 7, scale = 2)
+
+```
+
+
+```{r map_print_single}
+# 11813 29959 23069 
+
+plot_print <- table_set %>%
+  filter(pattern == 21588) %>%
+  compute_print_data(a=.$a[[1]], iterations=1E6, gridsize=1000) %>% 
+  ggplot(aes(x, y)) + 
+  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+  scale_colour_gradient(low="white", high="black") +
+  coord_equal()
+
+```
+
+```{r map_print_multiple}
+
+scale_ink <- scale_color_gradientn(colors = c("white","grey60","#036564", "#033649", "#031634")) 
 
 list_selected_volume_01 <- c(
   683, 1269, 1594, # 976
@@ -281,58 +319,36 @@ list_selected_lines_01 <- c(
   3723, 4120, 4668
 )
 
-# properties for selected maps 
-# table_set %>% filter(pattern %in% list_selected_volume)
-# table_set %>% filter(pattern %in% list_selected_lines)
-```
+list_selected_shell <- c(2213)
 
+list_selected_glyph <- c(8503, 23069)
 
-```{r map_print_single}
+list_selected_evolve <- c(21588, 10004, 1017)
+
+# series
+name <- "evolve"
 
 data_print <- table_set %>%
-  filter(pattern == 11813) %>%
-  compute_print_data(a=.$a[[1]], iterations=2E6, gridsize=1000) 
-
-plot_print <- data_print %>% 
-  ggplot(aes(x, y)) + 
-  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
-  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
-  scale_colour_gradient(low="white", high="black") +
-  coord_equal()
-
-```
-
-```{r map_print_nine}
-
-# volume serie
-data_print_volume <- table_set %>%
-  filter(pattern %in% list_selected_volume) %>% 
+  filter(pattern %in% !! sym(glue::glue("list_selected_{name}"))) %>% 
   mutate(
-    data = map(a, compute_print_data, iteration=1E6, gridsize=1000),
+    data = future_map(a, compute_print_data, iteration=3E6, gridsize=1000),
     plot = map(data, render_print)
   )
 
-plot_print_volume <- cowplot::plot_grid(plotlist = data_print_volume$plot)
+plot_print <- cowplot::plot_grid(plotlist = rev(data_print$plot), nrow=1)
 
-ggsave(plot_print_volume, file="./R/figures/attractor_set_volume_01.png", dpi=300, width=6, height=8.5, scale=2)
+# AX ratio : 6:8.5
+ggsave(
+  plot_print,
+  file=glue::glue("./R/figures/attractor_set_{name}.png"),
+  dpi=300, width=15, height=5, scale=1)
 
-# lines serie
-data_print_lines <- table_set %>%
-  filter(pattern %in% list_selected_lines) %>% 
-  mutate(
-    data = map(a, compute_print_data, iteration=1E6, gridsize=1000),
-    plot = map(data, render_print)
-  )
-
-plot_print_lines <- cowplot::plot_grid(plotlist = data_print_lines$plot)
-
-ggsave(plot_print_lines, file="./R/figures/attractor_set_lines_01.png", dpi=300, width=6, height=8.5, scale=2)
 
 ```
 
 
 ```{r map_print_example}
-data_print <- compute_print_data(
+data_print <- compute_parallel_data(
   a = c(-0.38, -0.60,  0.20, -0.79,  0.10,  0.54,  0.41, -0.59,  0.95, -1.19, -0.65, -0.66),
   iterations = 4E6,
   gridsize = 1000)
@@ -346,7 +362,7 @@ plot_print <- data_print %>%
 
 ggsave(plot_print, file="./R/figures/attractor_01.png", dpi=200, width = 4, height = 6, scale = 1)
 
-data_print <- compute_print_data(
+data_print <- compute_parallel_data(
   a = c(-0.16, -0.37, -0.27, 0.16, -0.66, -0.74, -1.11, -0.51, 0.59, 0.81, -0.06, -0.44),
   iterations = 2000000,
   gridsize = 1000)
