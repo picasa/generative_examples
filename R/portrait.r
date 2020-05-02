@@ -5,12 +5,12 @@ library(scales)
 library(TSP)
 library(furrr)
 
-future::plan(multiprocess)
+future::plan(multisession)
 
 # input image
 set.seed(1)
 name <- "pierre"
-file <- glue::glue("./R/figures/input_{name}.jpg")
+file <- glue::glue("data/img/input_{name}.jpg")
 data <- load.image(file) %>% grayscale() %>% as.data.frame()
 
 # repeated weighted sampling

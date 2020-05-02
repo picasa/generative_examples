@@ -4,12 +4,19 @@
 library(tidyverse)
 library(future)
 library(furrr)
+library(cowplot)
 
 plan(multisession)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 theme_set(theme_void() + theme(legend.position = 'none'))
 
 set.seed(1)
+
+scale_ink <- scale_color_gradientn(
+  colors = c("white","grey60","#036564", "#033649", "#031634")
+  ) 
+scale_grey <- scale_colour_gradient(low="white", high="black")
+color_ink <- "#124270"
 
 ```
 
@@ -97,9 +104,13 @@ density_quantile <- function(data, gridsize=20) {
   data %>%
     group_by(x = ntile(x, gridsize), y = ntile(y, gridsize)) %>%
     summarize(n = n()) %>% nrow()
-
-  # density_matrix <- with(data, MASS::kde2d(x, y, n=bin))$z
 }
+
+# estimate 2D point density
+density_heatmap <- function(data, gridsize=20) {
+  density_matrix <- with(data, MASS::kde2d(x, y, n=gridsize))$z
+}
+
 
 # low resolution simulation of a single parameter set
 compute_grid_data <- function(a, iterations, ...) {
@@ -169,22 +180,30 @@ normalize_xy <- function(df) {
   
 }
 
-render_grid <- function(data) {
-  data %>%
-    unnest(xy) %>%
+render_grid <- function(data, color="black", output="facet") {
+  
+  data <- switch(output,
+         "single" = data,
+         "facet" = unnest(data, xy))
+  
+  plot <- data %>%
     ggplot(aes(x, y)) +
-    geom_point(size = 0, shape = 20, alpha = 0.1) +
-    coord_equal() +
-    facet_wrap(~ pattern)
+    geom_point(color = color, size = 0, shape = 20, alpha = 0.1) +
+    coord_equal()
+  
+  switch(output,
+    "single" = return(plot),
+    "facet" = return(plot + facet_wrap(~ pattern))
+  )
+
 }
 
-render_print <- function(data) {
+render_print <- function(data, scale_color = scale_grey) {
   plot <- data %>%
     ggplot(aes(x, y)) +
     geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
     scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
-    scale_colour_gradient(low="white", high="black") +
-    coord_equal()
+    scale_color + coord_equal()
   
   return(plot)
 }
@@ -248,17 +267,17 @@ ggsave(
 ```
 
 
-```{r map_explore}
+```{r map_explore, eval=FALSE}
 # L(quadratic_2d, henon_a, 0.01, 0.01)
 # L(quadratic_2d, rep(0, 12), 0.01, 0.01)
 
 # sample parameter space and filter interesting solutions based on Henrik Lindberg method
-table_set <- tibble(pattern = 1:30000) %>%
+table_set <- tibble(pattern = 1:50000) %>%
   mutate(a = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
   mutate(L_val = future_map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
   filter(L_val > 0)
 
-# cluster maps based on point density distribution
+# add a metric for filtering of scatterplot density
 data_set <- table_set %>%
   compute_grid_data(5000) %>% 
   mutate(density = map_int(xy, density_quantile, gridsize=20))
@@ -267,46 +286,33 @@ plot_cluster <- data_set %>%
   ggplot(aes(x=density, y=as.factor(pattern))) +
   geom_point() + geom_vline(xintercept = 200) + theme_bw()
 
-plot_set_keep <- data_set %>% filter(density >= 120) %>% render_grid()
-plot_set_discard <- data_set %>% filter(density < 120) %>% render_grid()
+# plot
+plot_set_keep <- data_set %>% filter(density >= 90) %>% render_grid()
+plot_set_discard <- data_set %>% filter(density < 90) %>% render_grid()
 plot_set_volume <- data_set %>% filter(density >= 200) %>% render_grid()
 
 plot_set_focus <- data_set %>%
-  filter(pattern == 23069) %>%
-  compute_grid_data(1E6) %>% 
-  render_grid() 
+  filter(pattern == 2691) %>%
+  compute_grid_data(1E5) %>%
+  render_grid()
+
+# export
+saveRDS(data_set, file="data/attractor_set.rds", compress="gzip")
 
 ggsave(
   plot_set_keep + facet_wrap(vars(pattern), ncol=20),
   file="./R/figures/attractor_set_keep.png",
-  dpi=200, width = 7, height = 7, scale = 2)
+  dpi=200, width = 7, height = 10, scale = 2)
 
 ggsave(
   plot_set_discard + facet_wrap(vars(pattern), ncol=20),
   file="./R/figures/attractor_set_discard.png",
-  dpi=200, width = 7, height = 7, scale = 2)
+  dpi=200, width = 7, height = 10, scale = 2)
 
 ```
 
 
-```{r map_print_single}
-# 11813 29959 23069 
-
-plot_print <- table_set %>%
-  filter(pattern == 21588) %>%
-  compute_print_data(a=.$a[[1]], iterations=1E6, gridsize=1000) %>% 
-  ggplot(aes(x, y)) + 
-  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
-  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
-  scale_colour_gradient(low="white", high="black") +
-  coord_equal()
-
-```
-
-```{r map_print_multiple}
-
-scale_ink <- scale_color_gradientn(colors = c("white","grey60","#036564", "#033649", "#031634")) 
-
+```{r print_single}
 list_selected_volume_01 <- c(
   683, 1269, 1594, # 976
   2213, 2527, 2670,
@@ -319,11 +325,23 @@ list_selected_lines_01 <- c(
   3723, 4120, 4668
 )
 
+plot_print <- table_set %>%
+  filter(pattern == 27290) %>%
+  compute_print_data(a=.$a[[1]], iterations=1E6, gridsize=1000) %>% 
+  ggplot(aes(x, y)) + 
+  geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+  scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
+  scale_colour_gradient(low="white", high="black") +
+  coord_equal() + scale_ink
+
+```
+
+```{r print_multiple}
 list_selected_shell <- c(2213)
 
 list_selected_glyph <- c(8503, 23069)
 
-list_selected_evolve <- c(21588, 10004, 1017)
+list_selected_evolve <- c(22646, 21588, 10004, 1017)
 
 # series
 name <- "evolve"
@@ -331,23 +349,97 @@ name <- "evolve"
 data_print <- table_set %>%
   filter(pattern %in% !! sym(glue::glue("list_selected_{name}"))) %>% 
   mutate(
-    data = future_map(a, compute_print_data, iteration=3E6, gridsize=1000),
+    data = future_map(a, compute_print_data, iteration=2E6, gridsize=1000),
     plot = map(data, render_print)
   )
 
-plot_print <- cowplot::plot_grid(plotlist = rev(data_print$plot), nrow=1)
+write_rds(data_print, glue::glue("data/attractor_set_{name}.rds"), compress="gz")
+hash_md5 <- digest::digest(glue::glue("data/attractor_set_{name}.rds"), file=TRUE)
+footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
+
+plot_print <- plot_grid(plotlist = rev(data_print$plot), ncol=1) + 
+  draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color="grey40")
 
 # AX ratio : 6:8.5
 ggsave(
   plot_print,
   file=glue::glue("./R/figures/attractor_set_{name}.png"),
-  dpi=300, width=15, height=5, scale=1)
+  dpi=300, width=210, height=295, scale=1, units="mm")
 
+```
+
+```{r print_characters}
+name <- "text"
+
+# plot set of graphs based on density criteria (620/841)
+plot_set_characters <- table_set %>%
+  compute_grid_data(iterations = 2000) %>% 
+  mutate(density = map_int(xy, density_quantile, gridsize=20)) %>% 
+  filter(density < 170) %>%
+  render_grid(color=color_ink)
+
+ggsave(
+  plot_set_characters + facet_wrap(vars(pattern), ncol=20),
+  file=glue::glue("./R/figures/attractor_set_characters.png"),
+  dpi=300, width=210, height=295, scale=2, units="mm")
+
+# manually select interesting glyphs
+# TODO cluster scatterplots or heatmaps based on 2D point density distribution
+list_selected_characters <- c(
+  31, 75, 737, 1556, 2051, 2128, 2669, 2691, 3292, 3603,
+  3723, 3788, 4016, 4449, 5797, 13767, 14315, 14603, 15157, 16089, #11813
+  16638, 20341, 21548, 21847, 21895, 23384, 24190, 24586, 24939, 24943,
+  25319, 25384, 25546, 25990, 25998, 26367, 27606, 29238, 30093, 30647,
+  31870, 33263, 33905, 37160, 37461, 37513, 37657, 39385, 39768, 43188, 
+  43796, 44876, 45284, 45485, 46358, 46507, 48313, 48534, 48733, 49585
+)
+
+plot_set_characters_selected <- table_set %>%
+  filter(pattern %in% list_selected_characters) %>% 
+  compute_grid_data(iterations = 1000) %>% 
+  render_grid(color=color_ink) 
+
+# function to sample a sequence of characters in a list
+sample_sequence <- function(n, length, data) {
+  data %>%
+    sample(size=n, replace = TRUE) %>% 
+    plot_grid(plotlist = ., nrow=length) + 
+    theme(plot.margin = unit(c(1,0,1,0), "cm"))
+}
+
+# generate a low resolution sequence list of characters
+data_characters <- table_set %>%
+  filter(pattern %in% list_selected_characters) %>% 
+  compute_grid_data(iterations = 1000) %>% 
+  mutate(
+    plot = map(xy, render_grid, color=color_ink, output="single")
+  )
+
+write_rds(data_characters, glue::glue("data/attractor_set_{name}.rds"), compress="gz")
+hash_md5 <- digest::digest(glue::glue("data/attractor_set_{name}.rds"), file=TRUE)
+footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
+
+# sample different symbol in different sequence length to emulate text
+set.seed(1)
+
+data_print <- tibble(character=sample(20:60, size=9, replace = TRUE)) %>% 
+  mutate(sequence = map(
+    character, sample_sequence,
+    data=data_characters$plot, length=60))
+
+plot_text <- plot_grid(plotlist = data_print$sequence, ncol = nrow(data_print)) + 
+  draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color=color_ink) 
+
+# export
+ggsave(
+  plot_text,
+  file=glue::glue("./R/figures/attractor_set_text.png"),
+  dpi=300, width=210, height=295, scale=1, units="mm")
 
 ```
 
 
-```{r map_print_example}
+```{r print_example}
 data_print <- compute_parallel_data(
   a = c(-0.38, -0.60,  0.20, -0.79,  0.10,  0.54,  0.41, -0.59,  0.95, -1.19, -0.65, -0.66),
   iterations = 4E6,
@@ -360,7 +452,7 @@ plot_print <- data_print %>%
   scale_color_gradientn(colors = lapply(colourlovers::clpalette(292482)$colors, function(c) paste0('#', c))) +
   coord_equal()
 
-ggsave(plot_print, file="./R/figures/attractor_01.png", dpi=200, width = 4, height = 6, scale = 1)
+ggsave(plot_print, file="./R/figures/attractor_01.png", dpi=300, width=6, height=8.5, scale=1)
 
 data_print <- compute_parallel_data(
   a = c(-0.16, -0.37, -0.27, 0.16, -0.66, -0.74, -1.11, -0.51, 0.59, 0.81, -0.06, -0.44),
