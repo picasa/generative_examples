@@ -4,6 +4,7 @@
 library(tidyverse)
 library(future)
 library(furrr)
+library(cluster)
 library(cowplot)
 
 plan(multisession)
@@ -107,8 +108,13 @@ density_quantile <- function(data, gridsize=20) {
 }
 
 # estimate 2D point density
-density_heatmap <- function(data, gridsize=20) {
-  density_matrix <- with(data, MASS::kde2d(x, y, n=gridsize))$z
+density_heatmap <- function(data, gridsize=20, bw=1/10) {
+  matrix <- with(data, MASS::kde2d(x, y, n=gridsize, h=bw))$z %>% scale(.)
+  
+  matrix_long <- matrix %>% reshape2::melt() %>%
+    set_names(c("x","y","value")) %>% as_tibble()
+  
+  return(matrix_long)
 }
 
 
@@ -277,14 +283,13 @@ table_set <- tibble(pattern = 1:50000) %>%
   mutate(L_val = future_map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
   filter(L_val > 0)
 
+# export
+saveRDS(table_set, file="data/attractor_parameter_set.rds", compress="gzip")
+
 # add a metric for filtering of scatterplot density
 data_set <- table_set %>%
   compute_grid_data(5000) %>% 
   mutate(density = map_int(xy, density_quantile, gridsize=20))
-
-plot_cluster <- data_set %>%
-  ggplot(aes(x=density, y=as.factor(pattern))) +
-  geom_point() + geom_vline(xintercept = 200) + theme_bw()
 
 # plot
 plot_set_keep <- data_set %>% filter(density >= 90) %>% render_grid()
@@ -295,9 +300,6 @@ plot_set_focus <- data_set %>%
   filter(pattern == 2691) %>%
   compute_grid_data(1E5) %>%
   render_grid()
-
-# export
-saveRDS(data_set, file="data/attractor_set.rds", compress="gzip")
 
 ggsave(
   plot_set_keep + facet_wrap(vars(pattern), ncol=20),
@@ -311,8 +313,68 @@ ggsave(
 
 ```
 
+```{r cluster_analysis, eval=FALSE}
 
-```{r print_single}
+# load parameter sets
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
+# cluster analysis for scatterplots or heatmaps based on 2D point density distribution
+data_cluster <- table_set %>%
+  compute_grid_data(2000) %>% 
+  mutate(
+    density = map_int(xy, density_quantile, gridsize=20),
+    heatmap = future_map(xy, density_heatmap, gridsize=20, bw=1/10),
+    plot = future_map(xy, render_grid, output="single")
+    )
+
+matrix_cluster <- data_cluster %>% 
+  select(pattern, heatmap) %>% 
+  unnest(heatmap) %>%
+  pivot_wider(names_from = c(x, y), values_from = value) %>% 
+  select(-pattern) %>% as.matrix()
+
+# cl <- kmeans(matrix_cluster, 3)
+cl <- pam(matrix_cluster, 6, pamonce = 5)
+
+data_cluster <- data_cluster %>% mutate(cluster = cl$cluster)
+
+# basic density feature allows to roughly separate dispersed and close-packed graphs
+plot_cluster <- data_cluster %>%
+  ggplot(aes(x=density, y=as.factor(pattern))) +
+  geom_point() + geom_vline(xintercept = 100) + theme_bw()
+
+# view clustering result on graph filtered to avoid complex solutions
+data_cluster_subset <- data_cluster %>% filter(density < 100) 
+
+# plot heatmaps that represent graphs to cluster  
+plot_heatmap <- data_cluster_subset %>% 
+  unnest(heatmap) %>% 
+  ggplot(aes(x, y, fill=value)) + 
+  geom_raster() + facet_wrap(vars(pattern)) +
+  scale_fill_viridis_c()
+
+# kmeans clustering seems to mainly get graph global shape and orientation
+plot_cluster <- plot_grid(
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==1) %>% pull(plot)),
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==2) %>% pull(plot)),
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==3) %>% pull(plot)),
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==4) %>% pull(plot)),
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==5) %>% pull(plot)),
+  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==6) %>% pull(plot)),
+  labels=1:6, scale=0.8
+)
+
+ggsave(
+  plot_cluster,
+  file="./R/figures/attractor_set_cluster.png",
+  dpi=200, width = 7, height = 10, scale = 2)
+
+```
+
+
+```{r print_single, eval=FALSE}
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
 list_selected_volume_01 <- c(
   683, 1269, 1594, # 976
   2213, 2527, 2670,
@@ -336,7 +398,9 @@ plot_print <- table_set %>%
 
 ```
 
-```{r print_multiple}
+```{r print_multiple, eval=FALSE}
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
 list_selected_shell <- c(2213)
 
 list_selected_glyph <- c(8503, 23069)
@@ -368,7 +432,9 @@ ggsave(
 
 ```
 
-```{r print_characters}
+```{r print_characters, eval=FALSE}
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
 name <- "text"
 
 # plot set of graphs based on density criteria (620/841)
@@ -384,7 +450,6 @@ ggsave(
   dpi=300, width=210, height=295, scale=2, units="mm")
 
 # manually select interesting glyphs
-# TODO cluster scatterplots or heatmaps based on 2D point density distribution
 list_selected_characters <- c(
   31, 75, 737, 1556, 2051, 2128, 2669, 2691, 3292, 3603,
   3723, 3788, 4016, 4449, 5797, 13767, 14315, 14603, 15157, 16089, #11813
@@ -439,7 +504,7 @@ ggsave(
 ```
 
 
-```{r print_example}
+```{r print_example, eval=FALSE}
 data_print <- compute_parallel_data(
   a = c(-0.38, -0.60,  0.20, -0.79,  0.10,  0.54,  0.41, -0.59,  0.95, -1.19, -0.65, -0.66),
   iterations = 4E6,
