@@ -10,8 +10,7 @@ library(cowplot)
 plan(multisession)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 # theme_set(theme_void() + theme(legend.position = 'none'))
-
-set.seed(1)
+options(dplyr.summarise.inform=FALSE)
 
 scale_ink <- scale_color_gradientn(
   colors = c("white","grey60","#036564", "#033649", "#031634")
@@ -130,6 +129,7 @@ compute_grid_data <- function(a, iterations, ...) {
 }
 
 # high resolution simulation of a single parameter set
+# data is binned by cells with n as the density of points in this cell
 compute_print_data <- function(a, iterations, gridsize, ...) {
   data <- iterate(quadratic_2d, a, x0=0, y0=0, iterations) 
   
@@ -276,11 +276,12 @@ ggsave(
 
 
 ```{r map_explore, eval=FALSE}
-# L(quadratic_2d, henon_a, 0.01, 0.01)
-# L(quadratic_2d, rep(0, 12), 0.01, 0.01)
+set.seed(1)
 
 # sample parameter space and filter interesting solutions based on Henrik Lindberg method
-table_set <- tibble(pattern = 1:50000) %>%
+# L(quadratic_2d, henon_a, 0.01, 0.01)
+# L(quadratic_2d, rep(0, 12), 0.01, 0.01)
+table_set <- tibble(pattern = 1:1E5) %>%
   mutate(a = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
   mutate(L_val = future_map_dbl(a, ~ L(quadratic_2d, ., 0, 0))) %>%
   filter(L_val > 0)
@@ -299,28 +300,60 @@ plot_set_discard <- data_set %>% filter(density < 90) %>% render_grid()
 plot_set_volume <- data_set %>% filter(density >= 200) %>% render_grid()
 
 plot_set_focus <- data_set %>%
-  filter(pattern == 2691) %>%
+  filter(pattern == 92261) %>%
   compute_grid_data(1E5) %>%
   render_grid()
 
 ggsave(
   plot_set_keep + facet_wrap(vars(pattern), ncol=20),
   file="./R/figures/attractor_set_keep.png",
-  dpi=200, width = 7, height = 10, scale = 2)
+  dpi=200, width = 7, height = 20, scale = 2)
 
 ggsave(
   plot_set_discard + facet_wrap(vars(pattern), ncol=20),
   file="./R/figures/attractor_set_discard.png",
-  dpi=200, width = 7, height = 10, scale = 2)
+  dpi=200, width = 7, height = 20, scale = 2)
 
 ```
 
-```{r cluster_analysis, eval=FALSE}
+```{r cluster_analysis_input, eval=FALSE}
+# cluster analysis on parameters space 
 
 # load parameter sets
 table_set <- read_rds("data/attractor_parameter_set.rds")
 
-# cluster analysis for scatterplots or heatmaps based on 2D point density distribution
+data_cluster <- table_set %>%
+  compute_grid_data(2000) %>% 
+  mutate(plot = future_map(xy, render_grid, output="single"))
+
+# cluster parameters vectors
+n_cluster = 25
+matrix_cluster <- data_cluster %>% pull(a, name=pattern) %>% bind_rows() %>% t() 
+cl <- pam(matrix_cluster, k=n_cluster, pamonce = 5)
+data_cluster <- data_cluster %>% mutate(cluster = cl$cluster)
+
+# similar parameter set do not lead to similar graphs, seems expected...
+data_plot_subset <- data_cluster %>% 
+  group_by(cluster) %>% 
+  slice_sample(n=20) %>% nest() %>% 
+  mutate(plot_list=map(data, ~ plot_grid(plotlist = .x$plot)))
+
+plot_cluster <- plot_grid(plotlist = data_plot_subset$plot_list, labels=1:n_cluster, scale=0.8)
+
+ggsave(
+  plot_cluster,
+  file="./R/figures/attractor_set_cluster_parameters.png",
+  dpi=200, width = 7, height = 10, scale = 2)
+
+```
+
+
+```{r cluster_analysis_output, eval=FALSE}
+
+# load parameter sets
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
+# cluster analysis on output space : heatmaps based on 2D point density distribution
 data_cluster <- table_set %>%
   compute_grid_data(2000) %>% 
   mutate(
@@ -336,7 +369,8 @@ matrix_cluster <- data_cluster %>%
   select(-pattern) %>% as.matrix()
 
 # cl <- kmeans(matrix_cluster, 3)
-cl <- pam(matrix_cluster, 6, pamonce = 5)
+n_cluster = 25
+cl <- pam(matrix_cluster, k = n_cluster, pamonce = 5)
 
 data_cluster <- data_cluster %>% mutate(cluster = cl$cluster)
 
@@ -350,25 +384,23 @@ data_cluster_subset <- data_cluster %>% filter(density < 120)
 
 # plot heatmaps that represent graphs to cluster  
 plot_heatmap <- data_cluster_subset %>% 
+  slice_sample(n=100) %>% 
   unnest(heatmap) %>% 
   ggplot(aes(x, y, fill=value)) + 
   geom_raster() + facet_wrap(vars(pattern)) +
   scale_fill_viridis_c()
 
 # kmeans clustering seems to mainly get graph global shape and orientation
-plot_cluster <- plot_grid(
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==1) %>% pull(plot)),
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==2) %>% pull(plot)),
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==3) %>% pull(plot)),
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==4) %>% pull(plot)),
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==5) %>% pull(plot)),
-  plot_grid(plotlist=data_cluster_subset %>% filter(cluster==6) %>% pull(plot)),
-  labels=1:6, scale=0.8
-)
+data_plot_subset <- data_cluster_subset %>% 
+  group_by(cluster) %>% 
+  slice_sample(n=20) %>% nest() %>% 
+  mutate(plot_list=map(data, ~ plot_grid(plotlist = .x$plot)))
+
+plot_cluster <- plot_grid(plotlist = data_plot_subset$plot_list, labels=1:n_cluster, scale=0.8)
 
 ggsave(
   plot_cluster,
-  file="./R/figures/attractor_set_cluster.png",
+  file="./R/figures/attractor_set_cluster_density.png",
   dpi=200, width = 7, height = 10, scale = 2)
 
 ```
@@ -377,26 +409,45 @@ ggsave(
 ```{r print_single, eval=FALSE}
 table_set <- read_rds("data/attractor_parameter_set.rds")
 
-list_selected_volume_01 <- c(
-  683, 1269, 1594, # 976
-  2213, 2527, 2670,
-  3236, 3339, 4548
-)
-
 list_selected_lines_01 <- c(
   75, 2364, 529,
   1820, 2691, 3066,
-  3723, 4120, 4668
+  3723, 4120, 4668,
+  37513, 38286, 92261
 )
 
+list_selected_volume_01 <- c(
+  683, 1269, 1594, # 976
+  2213, 2527, 2670,
+  3236, 3339, 4548, 18762
+)
+
+value_pattern <- 92261
+footer <- paste(Sys.Date(), value_pattern)
+
 plot_print <- table_set %>%
-  filter(pattern == 2213) %>%
-  compute_print_data(a=.$a[[1]], iterations=2E6, gridsize=1000) %>% 
+  filter(pattern == value_pattern) %>%
+  compute_grid_data(iterations=1E6) %>% unnest(xy) %>% 
+  ggplot(aes(x, y)) + 
+  geom_point(alpha = 0.05, size = 0) +
+  coord_equal() + theme_void() 
+
+# outputs without orbital-patterns are better visualized with an estimation of point density
+plot_print <- table_set %>%
+  filter(pattern == value_pattern) %>%
+  compute_print_data(a=.$a[[1]], iterations=3E6, gridsize=1000) %>% 
   ggplot(aes(x, y)) + 
   geom_point(aes(alpha = log(n), color = log(n)), size = 0) +
   scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
   scale_colour_gradient(low="white", high="black") +
-  coord_equal() 
+  coord_equal() + theme_void() + theme(legend.position = "none")
+
+# export
+ggsave(
+  plot_grid(plot_print) +
+    draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color="black"),
+  file=glue::glue("./R/figures/attractor_set_{value_pattern}.png"),
+  dpi=300, width=210, height=295, scale=1, units="mm")
 
 ```
 

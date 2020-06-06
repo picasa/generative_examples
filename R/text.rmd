@@ -1,14 +1,13 @@
 
 # Generative text systems 
 
-
 ```{r setup}
 library(tidyverse)
 library(cowplot)
 
-#library(future)
-#library(furrr)
-#plan(multisession)
+library(future)
+library(furrr)
+plan(multisession)
 
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 # theme_set(theme_void() + theme(legend.position = 'none'))
@@ -49,9 +48,10 @@ render_sequence <- function(n, length, data) {
 render_paragraph <- function(text, data, ncol=80, scale=0.9) {
   seq <- text %>% str_to_lower() %>% str_split(., "") 
   # join characters with glyph plots, non-match creates NULL plot (blank space with cowplot)
-  data <- tibble(character=seq[[1]]) %>% left_join(data) 
-  # TODO render plots here to allow some variability in final layout ?
-  plot_grid(plotlist = data$plot_ld, ncol=ncol, scale=scale)
+  data <- tibble(character=seq[[1]]) %>%
+    left_join(data %>% select(character, pattern, plot=plot_ld)) 
+  # render plots here to allow some variability in final layout ?
+  plot_grid(plotlist = data$plot, ncol=ncol, scale=scale)
 }
 ```
 
@@ -126,57 +126,56 @@ ggsave(
 # TODO: test patchwork package for layout *design option*
 ```
 
-```{r debug_patchwork}
-# patchwork
-library(patchwork)
+```{r text_sars, eval=FALSE}
+# render SARS-CoV-2 genome sequence
 
-p1 <- wrap_plots(data_print_p1 %>% pull(plot_ld) %>% compact(), ncol=80)
-p2 <- wrap_plots(data_print_p2 %>% pull(plot_ld) %>% compact(), ncol=80)
+# use glyphs based on 2D ODE (see attractors.rmd) and add a lower resolution
+data_characters <- read_rds("data/attractor_set_text.rds") %>% 
+  mutate(
+    xy_ld = map(xy, sample_n, size=250),
+    plot_ld = map(xy_ld, render_plot, alpha=0.2)
+  )
 
-plot_text <- p1 + p2 + plot_layout(ncol = 1)
+# select one glyph per base
+chr_DNA <- c("a"=31, "t"=21847, "g"=3292, "c"=3603)
 
-ggsave(plot_text, file="./R/figures/tmp.png", dpi=300, width=295, height=210, scale=1, units="mm")
+data_glyphs <- data_characters %>% 
+  filter(pattern %in% chr_DNA) %>%
+  slice(match(chr_DNA, pattern)) %>% 
+  mutate(character = names(chr_DNA))
 
+# get genome sequence
+seq_sars <- read_lines("data/SARS-CoV-2.txt", skip=1)
 
-# TODO test patchwork with list-columns
-library(patchwork)
-library(tidyverse)
+# select 70x70 last characters
+data_print <- tibble(text=seq_sars) %>% 
+  slice((n()-69):n()) %>% 
+  mutate(plot = future_map(text, render_paragraph, data=data_glyphs, ncol=70, scale=1))
 
-theme_set(theme_void() + theme(legend.position = 'none'))
+title <- paste(sum(str_length(data_print$text))/1000, "kb")
+footer <- paste(Sys.Date(), title)
 
-d <- mtcars %>% 
-  group_by(cyl) %>% 
-  nest() %>% 
-  mutate(plot = map(data, ~ ggplot(., aes(mpg, disp)) + geom_point()))
+plot_text <- plot_grid(plotlist = data_print$plot, ncol=1) +
+  draw_label(footer, x=1, y=0, hjust=1, size=9) +
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
 
-wrap_plots(d$plot)
+ggsave(
+  plot_text,
+  file="./R/figures/attractor_set_text_sars.png",
+  dpi=300, width=210, height=210, scale=1.5, units="mm")
 
-# using theme_set caused an error
-library(ggplot2)
-library(patchwork)
-
-theme_set(theme_void())
-
-p1 <- ggplot(mtcars) + geom_point(aes(mpg, disp)) 
-p2 <- ggplot(mtcars) + geom_boxplot(aes(gear, disp, group = gear)) 
-
-p1 + p2
-
-sessionInfo()
-
-# setting the theme at the plot level worked
-library(ggplot2)
-library(patchwork)
-
-p1 <- ggplot(mtcars) + geom_point(aes(mpg, disp)) + theme_void()
-p2 <- ggplot(mtcars) + geom_boxplot(aes(gear, disp, group = gear)) + theme_void()
-
-p1 + p2
+```
 
 
-reprex::reprex()
+```{r text_attractors_calligraphy, eval=FALSE}
+# superpose 2 or more simple glyphs by modifying coordinates
+data_characters <- read_rds("data/attractor_set_text.rds") 
 
-
+plot_text <- data_characters %>% 
+  ggplot(aes(x,y)) +
+  geom_point(data = . %>% filter(pattern==20341) %>% unnest(xy)) +
+  geom_point(data = . %>% filter(pattern==26367) %>% unnest(xy) %>%  mutate(x=x+0.6, y=y+0)) +
+  coord_equal() + theme_void()
 
 ```
 
@@ -191,6 +190,7 @@ reprex::reprex()
 library(ggraph)
 library(tidygraph)
 
+# generate original glyph type by using networks
 # https://en.wikipedia.org/wiki/Relative_neighborhood_graph
 
 graph <- as_tbl_graph(highschool) %>% 
@@ -205,6 +205,8 @@ ggraph(graph, layout = 'kk') +
 
 
 ```{r text_spline}
+
+# generate original glyph type by using splines
 # https://inconvergent.net/2017/spline-script/
 ```
 
