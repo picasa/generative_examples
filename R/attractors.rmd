@@ -8,15 +8,21 @@ library(cluster)
 library(cowplot)
 
 plan(multisession)
-knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
-# theme_set(theme_void() + theme(legend.position = 'none'))
-options(dplyr.summarise.inform=FALSE)
 
+# options
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+options(dplyr.summarise.inform=FALSE)
+update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
+
+# parameters
 scale_ink <- scale_color_gradientn(
   colors = c("white","grey60","#036564", "#033649", "#031634")
   ) 
-scale_grey <- scale_colour_gradient(low="white", high="black")
-scale_white <- scale_colour_gradient(low="black", high="white")
+
+scale_bg <- scale_colour_gradient(low="grey80", high="black")
+scale_grey <- scale_colour_gradient(low="grey60", high="black")
+scale_white <- scale_colour_gradient(low="grey60", high="white")
+
 color_ink <- "#124270"
 color_old <- "#FEFAEE"
 
@@ -40,8 +46,17 @@ quadratic_2d <- function(a, xn, yn) {
   c(xn1, yn1)
 }
 
+# henon phase function from http://www.complexification.net/gallery/machines/henonPhase/
+henon_phase <- function(a, xn, yn) {
+  xn1 <- xn * cos(a[1]) - (yn - xn^2) * sin(a[1])
+  yn1 <- xn * sin(a[1]) + (yn - xn^2) * cos(a[1])
+  
+  c(xn1, yn1)
+}
+
+
 # iterate quadratic map
-iterate <- function(step_fn, a, x0, y0, iterations) {
+iterate <- function(step_fn, a, x0, y0, iterations, ...) {
   x <- rep(x0, iterations)
   y <- rep(y0, iterations)
   
@@ -188,7 +203,7 @@ normalize_xy <- function(df) {
   
 }
 
-render_grid <- function(data, color="black", output="facet") {
+render_grid <- function(data, output="facet", color="black", size=0.5, alpha=1/10) {
   
   data <- switch(output,
          "single" = data,
@@ -196,7 +211,7 @@ render_grid <- function(data, color="black", output="facet") {
   
   plot <- data %>%
     ggplot(aes(x, y)) +
-    geom_point(color = color, size = 0, shape = 20, alpha = 0.1) +
+    geom_point(color = color, size = size, alpha = alpha) +
     coord_equal() + theme_void()
   
   switch(output,
@@ -206,10 +221,10 @@ render_grid <- function(data, color="black", output="facet") {
 
 }
 
-render_print <- function(data, scale_color = scale_grey) {
+render_print <- function(data, scale_color = scale_grey, size=0.3) {
   plot <- data %>%
     ggplot(aes(x, y)) +
-    geom_point(aes(alpha = sqrt(n), color = log(n)), size = 0, shape = 20) +
+    geom_point(aes(alpha = sqrt(n), color = log(n)), size = size) +
     scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
     scale_color + coord_equal() + theme_void() + theme(legend.position = "none")
   
@@ -228,19 +243,19 @@ plot_logistic <- data_map %>%
   geom_line(alpha = 0.2) 
 
 # bifurcation plot : x = f(r) in logistic map.
-logistic_grid <- tibble(r = seq(0, 4, length = 1000)) %>%
-  mutate(xy = map(r, ~ iterate(logistic, ., 0.01, 0, 500)))
+logistic_grid <- tibble(r = seq(0, 4, length = 2000)) %>%
+  mutate(xy = map(r, ~ iterate(logistic, ., 0.01, 0, 2000)))
 
 plot_bifurcation <- logistic_grid %>% unnest(xy) %>% 
   # group_by(r, x = round(x * 1000) / 1000) %>%
   # summarize(n = n()) %>% 
   ggplot(aes(x=r, y=x)) +
-  geom_point(size = 0, shape = 20, alpha=0.1) + theme_bw()
+  geom_point(alpha=0.1) + theme_bw()
 
 ggsave(
   plot_bifurcation,
   file="./R/figures/attractor_logistic_bifurcation.png",
-  dpi=200, width = 6, height = 4, scale = 2)
+  dpi=300, width = 6, height = 4, scale = 1)
 
 ```
 
@@ -248,32 +263,81 @@ ggsave(
 ```{r map_henon, eval=FALSE}
 henon_a <- c(1, 0, -1.4, 0, 0.3, 0, 0, 1, 0, 0, 0, 0)
 
-data_map <- iterate(step_fn = quadratic_2d, a = henon_a, x0 = 0, y0 = 0, iterations = 5000)
+data_map <- iterate(step_fn = quadratic_2d, a = henon_a, x0 = 0, y0 = 0, iterations = 1E5)
 
 plot_henon <- data_map %>%
   ggplot(aes(x, y)) +
-  geom_point(size = 0, shape = 20, alpha = 0.2) + 
+  geom_point(alpha = 0.1) + 
   coord_equal() + theme_void()
 
 # bifurcation plot : x = f(a) in Henon map.
-henon_grid <- tibble(p = seq(-1.5, -1, length = 1000)) %>%
+henon_grid <- tibble(p = seq(-1.5, -1, length = 2000)) %>%
   mutate(
     a = map(p, ~ replace(henon_a, 3, .)),
-    xy = map(a, ~ iterate(quadratic_2d, ., 0, 0, 1000))
+    xy = map(a, ~ iterate(quadratic_2d, ., 0, 0, 2000))
   )
 
 plot_bifurcation <- henon_grid %>% select(-a) %>% unnest(xy) %>% 
   filter(x > -1.5, x < 1.5) %>% 
-  ggplot(aes(x=-p, y=x)) +
-  geom_point(size = 0, shape = 20, alpha = 0.1) + theme_bw()
+  ggplot(aes(x = -p, y = x)) +
+  geom_point(alpha = 0.1) + theme_bw()
 
 ggsave(
   plot_bifurcation,
   file="./R/figures/attractor_henon_bifurcation.png",
-  dpi=200, width = 6, height = 4, scale = 2)
+  dpi=300, width = 6, height = 4, scale = 1)
 
 ```
 
+
+```{r phase_henon, eval=FALSE}
+# explore both initial conditions and parameterization effects on Henon phase
+# phase space plot : xy = f(x0,y0) in Henon phase.
+# inspiration from http://paulbourke.net/fractals/henonphase/
+
+henon_ex = c(-10, 1.2, 1.57, 1.9)
+henon_seq = seq(-10, -9, length=4)
+
+design_parameter <- tibble(a = henon_ex)
+
+# TODO smarter filter of initial conditions giving similar orbits (distinct permutations ?)
+design_phase <- crossing(
+  x0 = seq(0, 1, length = 15),
+  y0 = seq(0, 1, length = 15)
+  ) %>%
+  mutate(s = x0 + y0) %>%
+  filter(! y0 == s) %>% 
+  arrange(s) %>% 
+  mutate(condition = seq_along(x0))
+
+design <- crossing(design_parameter, design_phase)
+
+# simulate then resample each output from a set of initial conditions
+data_phase <- design %>%
+  mutate(
+    xy = future_pmap(
+      list(a, x0, y0),
+      ~ iterate(a= ..1, x0=..2, y0=..3, step_fn = henon_phase, iterations = 1E5)),
+    xy_low = future_map(xy, slice_sample, n=3E3)
+  ) 
+
+# plot phase space for each parameter value
+data_plot <- data_phase %>% 
+  filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>% 
+  select(a, condition, x0, y0, xy_low) %>% 
+  unnest(xy_low) %>% 
+  group_nest(a) %>% 
+  mutate(plot = map(data, render_grid, output="single", size=0.2, alpha=1/5))
+  
+plot_phase <- plot_grid(plotlist = data_plot$plot)
+
+# export
+ggsave(
+  plot_phase,
+  file="./R/figures/attractor_henon_phase_01.png",
+  dpi=300, width = 210, height = 210, units = "mm", scale = 1)
+
+```
 
 ```{r map_explore, eval=FALSE}
 set.seed(1)
@@ -300,8 +364,8 @@ plot_set_discard <- data_set %>% filter(density < 90) %>% render_grid()
 plot_set_volume <- data_set %>% filter(density >= 200) %>% render_grid()
 
 plot_set_focus <- data_set %>%
-  filter(pattern == 92261) %>%
-  compute_grid_data(1E5) %>%
+  filter(pattern == 38286) %>%
+  compute_grid_data(5E5) %>%
   render_grid()
 
 ggsave(
@@ -316,44 +380,14 @@ ggsave(
 
 ```
 
-```{r cluster_analysis_input, eval=FALSE}
-# cluster analysis on parameters space 
 
-# load parameter sets
-table_set <- read_rds("data/attractor_parameter_set.rds")
 
-data_cluster <- table_set %>%
-  compute_grid_data(2000) %>% 
-  mutate(plot = future_map(xy, render_grid, output="single"))
-
-# cluster parameters vectors
+```{r cluster_analysis, eval=FALSE}
 n_cluster = 25
-matrix_cluster <- data_cluster %>% pull(a, name=pattern) %>% bind_rows() %>% t() 
-cl <- pam(matrix_cluster, k=n_cluster, pamonce = 5)
-data_cluster <- data_cluster %>% mutate(cluster = cl$cluster)
-
-# similar parameter set do not lead to similar graphs, seems expected...
-data_plot_subset <- data_cluster %>% 
-  group_by(cluster) %>% 
-  slice_sample(n=20) %>% nest() %>% 
-  mutate(plot_list=map(data, ~ plot_grid(plotlist = .x$plot)))
-
-plot_cluster <- plot_grid(plotlist = data_plot_subset$plot_list, labels=1:n_cluster, scale=0.8)
-
-ggsave(
-  plot_cluster,
-  file="./R/figures/attractor_set_cluster_parameters.png",
-  dpi=200, width = 7, height = 10, scale = 2)
-
-```
-
-
-```{r cluster_analysis_output, eval=FALSE}
 
 # load parameter sets
 table_set <- read_rds("data/attractor_parameter_set.rds")
 
-# cluster analysis on output space : heatmaps based on 2D point density distribution
 data_cluster <- table_set %>%
   compute_grid_data(2000) %>% 
   mutate(
@@ -362,44 +396,60 @@ data_cluster <- table_set %>%
     plot = future_map(xy, render_grid, output="single")
     )
 
-matrix_cluster <- data_cluster %>% 
-  select(pattern, heatmap) %>% 
-  unnest(heatmap) %>%
+# cluster analysis on parameters space 
+matrix_input <- data_cluster %>% pull(a, name=pattern) %>% bind_rows() %>% t() 
+cluster_input <- pam(matrix_input, k=n_cluster, pamonce = 5)
+data_cluster <- data_cluster %>% mutate(cluster_input = cluster_input$cluster)
+
+# cluster analysis on output space : heatmaps based on 2D point density distribution
+matrix_output <- data_cluster %>% 
+  select(pattern, heatmap) %>% unnest(heatmap) %>%
   pivot_wider(names_from = c(x, y), values_from = value) %>% 
   select(-pattern) %>% as.matrix()
 
-# cl <- kmeans(matrix_cluster, 3)
-n_cluster = 25
-cl <- pam(matrix_cluster, k = n_cluster, pamonce = 5)
-
-data_cluster <- data_cluster %>% mutate(cluster = cl$cluster)
+cluster_output <- pam(matrix_output, k = n_cluster, pamonce = 5)
+data_cluster <- data_cluster %>% mutate(cluster_output = cluster_output$cluster)
 
 # basic density feature allows to roughly separate dispersed and close-packed graphs
-plot_cluster <- data_cluster %>%
+plot_density <- data_cluster %>%
   ggplot(aes(x=density, y=as.factor(pattern))) +
-  geom_point() + geom_vline(xintercept = 100) + theme_bw()
+  geom_point() + geom_vline(xintercept = 100) + theme_bw() + 
+  theme(axis.text.y = element_blank())
 
 # view clustering result on graph filtered to avoid complex solutions
-data_cluster_subset <- data_cluster %>% filter(density < 120) 
+data_cluster_subset <- data_cluster %>% filter(density < 170) 
 
 # plot heatmaps that represent graphs to cluster  
 plot_heatmap <- data_cluster_subset %>% 
-  slice_sample(n=100) %>% 
+  slice_sample(n=49) %>% 
   unnest(heatmap) %>% 
   ggplot(aes(x, y, fill=value)) + 
   geom_raster() + facet_wrap(vars(pattern)) +
   scale_fill_viridis_c()
 
-# kmeans clustering seems to mainly get graph global shape and orientation
-data_plot_subset <- data_cluster_subset %>% 
-  group_by(cluster) %>% 
+# similar parameter set do not lead to similar graphs, seems expected...
+data_plot_input <- data_cluster_subset %>% 
+  group_by(cluster_input) %>% 
   slice_sample(n=20) %>% nest() %>% 
   mutate(plot_list=map(data, ~ plot_grid(plotlist = .x$plot)))
 
-plot_cluster <- plot_grid(plotlist = data_plot_subset$plot_list, labels=1:n_cluster, scale=0.8)
+plot_cluster_input <- plot_grid(plotlist = data_plot_input$plot_list, labels=1:n_cluster, scale=0.8)
 
 ggsave(
-  plot_cluster,
+  plot_cluster_input,
+  file="./R/figures/attractor_set_cluster_parameters.png",
+  dpi=200, width = 7, height = 10, scale = 2)
+
+# kmeans clustering seems to mainly get graph global shape and orientation
+data_plot_output <- data_cluster_subset %>% 
+  group_by(cluster_output) %>% 
+  slice_sample(n=20) %>% nest() %>% 
+  mutate(plot_list=map(data, ~ plot_grid(plotlist = .x$plot)))
+
+plot_cluster_output <- plot_grid(plotlist = data_plot_output$plot_list, labels=1:n_cluster, scale=0.8)
+
+ggsave(
+  plot_cluster_output,
   file="./R/figures/attractor_set_cluster_density.png",
   dpi=200, width = 7, height = 10, scale = 2)
 
@@ -419,27 +469,28 @@ list_selected_lines_01 <- c(
 list_selected_volume_01 <- c(
   683, 1269, 1594, # 976
   2213, 2527, 2670,
-  3236, 3339, 4548, 18762
+  3236, 3339, 4548, 18762, 70138
 )
 
-value_pattern <- 92261
+value_pattern <- 38286
 footer <- paste(Sys.Date(), value_pattern)
 
+# outputs with orbital-patterns 
 plot_print <- table_set %>%
   filter(pattern == value_pattern) %>%
-  compute_grid_data(iterations=1E6) %>% unnest(xy) %>% 
+  compute_grid_data(iterations=2E6) %>% unnest(xy) %>% 
   ggplot(aes(x, y)) + 
-  geom_point(alpha = 0.05, size = 0) +
+  geom_point(alpha = 1/50, size = 0.5) +
   coord_equal() + theme_void() 
 
 # outputs without orbital-patterns are better visualized with an estimation of point density
 plot_print <- table_set %>%
   filter(pattern == value_pattern) %>%
-  compute_print_data(a=.$a[[1]], iterations=3E6, gridsize=1000) %>% 
+  compute_print_data(a=.$a[[1]], iterations=3E6, gridsize=3000) %>% 
   ggplot(aes(x, y)) + 
-  geom_point(aes(alpha = log(n), color = log(n)), size = 0) +
+  geom_point(aes(alpha = log(n), color = log(n)), size = 0.4) +
   scale_alpha_continuous(range = c(0, 1), limits = c(0, NA)) +
-  scale_colour_gradient(low="white", high="black") +
+  scale_colour_gradient(low="grey100", high="black") +
   coord_equal() + theme_void() + theme(legend.position = "none")
 
 # export
@@ -447,18 +498,15 @@ ggsave(
   plot_grid(plot_print) +
     draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color="black"),
   file=glue::glue("./R/figures/attractor_set_{value_pattern}.png"),
-  dpi=300, width=210, height=295, scale=1, units="mm")
+  dpi=300, width=295, height=210, scale=1, units="mm")
 
 ```
+
 
 ```{r print_shell, eval=FALSE}
 table_set <- read_rds("data/attractor_parameter_set.rds")
 
 list_selected_shell <- c(2213)
-
-list_selected_glyph <- c(8503, 23069)
-
-list_selected_evolve <- c(22646, 21588, 10004, 1017)
 
 # series
 name <- "shell"
@@ -466,12 +514,11 @@ name <- "shell"
 data_print <- table_set %>%
   filter(pattern %in% !! sym(glue::glue("list_selected_{name}"))) %>% 
   mutate(
-    data = future_map(a, compute_print_data, iteration=2E6, gridsize=1000),
-    plot = map(data, render_print, scale_color=scale_white)
+    data = future_map(a, compute_print_data, iteration=2E6, gridsize=3000),
+    plot = map(data, render_print, scale_color=scale_white, size=0.4)
   )
 
-write_rds(data_print, glue::glue("data/attractor_set_{name}.rds"), compress="gz")
-hash_md5 <- digest::digest(glue::glue("data/attractor_set_{name}.rds"), file=TRUE)
+hash_md5 <- digest::digest(data_print)
 footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
 
 plot_print <- plot_grid(plotlist = rev(data_print$plot), ncol=1) + 
@@ -499,18 +546,17 @@ name <- "evolve"
 data_print <- table_set %>%
   filter(pattern %in% !! sym(glue::glue("list_selected_{name}"))) %>% 
   mutate(
-    data = future_map(a, compute_print_data, iteration=2E6, gridsize=1000),
-    plot = map(data, render_print, scale_color=scale_grey)
+    data = future_map(a, compute_print_data, iteration=3E6, gridsize=3000),
+    plot = map(data, render_print, scale_color=scale_bg, size=0.3)
   )
 
-write_rds(data_print, glue::glue("data/attractor_set_{name}.rds"), compress="gz")
-hash_md5 <- digest::digest(glue::glue("data/attractor_set_{name}.rds"), file=TRUE)
+hash_md5 <- digest::digest(data_print)
 footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
 
 plot_print <- plot_grid(plotlist = rev(data_print$plot), nrow=1) + 
   draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color="black") 
 
-# AX ratio : 6:8.5
+# AX ratio : 6:8.5 width=295, height=170
 ggsave(
   plot_print,
   file=glue::glue("./R/figures/attractor_set_{name}.png"),
@@ -523,8 +569,6 @@ ggsave(
 ```{r print_text, eval=FALSE}
 table_set <- read_rds("data/attractor_parameter_set.rds")
 
-name <- "text"
-
 # plot set of graphs based on density criteria (620/841)
 plot_set_characters <- table_set %>%
   compute_grid_data(iterations = 2000) %>% 
@@ -535,7 +579,7 @@ plot_set_characters <- table_set %>%
 ggsave(
   plot_set_characters + facet_wrap(vars(pattern), ncol=20),
   file=glue::glue("./R/figures/attractor_set_characters.png"),
-  dpi=300, width=210, height=295, scale=2, units="mm")
+  dpi=300, width=7, height=20, scale=2)
 
 # manually select interesting glyphs
 list_selected_characters <- c(
@@ -549,7 +593,7 @@ list_selected_characters <- c(
 
 plot_set_characters_selected <- table_set %>%
   filter(pattern %in% list_selected_characters) %>% 
-  compute_grid_data(iterations = 1000) %>% 
+  compute_grid_data(iterations = 2000) %>% 
   render_grid(color=color_ink) 
 
 ggsave(
@@ -557,8 +601,7 @@ ggsave(
   file=glue::glue("./R/figures/attractor_set_characters_selected.png"),
   dpi=300, width=210, height=295, scale=1, units="mm")
 
-
-# generate a low resolution sequence list of characters
+# generate a low resolution sequence list of characters to export
 data_characters <- table_set %>%
   filter(pattern %in% list_selected_characters) %>% 
   compute_grid_data(iterations = 1000) %>% 
@@ -566,8 +609,7 @@ data_characters <- table_set %>%
     plot = map(xy, render_grid, color=color_ink, output="single")
   )
 
-write_rds(data_characters, glue::glue("data/attractor_set_{name}.rds"), compress="gz")
-
+write_rds(data_characters, glue::glue("data/attractor_set_text.rds"), compress="gz")
 ```
 
 
