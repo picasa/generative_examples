@@ -5,12 +5,7 @@
 library(tidyverse)
 library(cowplot)
 
-library(future)
-library(furrr)
-plan(multisession)
-
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
-# theme_set(theme_void() + theme(legend.position = 'none'))
 
 set.seed(1)
 
@@ -26,13 +21,13 @@ color_old <- "#FEFAEE"
 
 ```
 
-```{r text_attractors_functions}
+```{r functions_attractors_text}
 
 # render a single character
-render_plot <- function(data, color="black", alpha=0.1) {
+render_plot <- function(data, color="black", alpha=0.2, size=0.5) {
   data %>%
     ggplot(aes(x, y)) +
-    geom_point(color = color, size = 0, shape = 20, alpha = alpha) +
+    geom_point(color = color, alpha = alpha, size = size, stroke = 0, shape = 16) +
     coord_equal() + theme_void()
 }
 
@@ -55,7 +50,21 @@ render_paragraph <- function(text, data, ncol=80, scale=0.9) {
 }
 ```
 
-```{r text_attractors_random, eval=FALSE}
+```{r plot_attractors_sample, eval=FALSE}
+data_characters <- read_rds("data/attractor_set_text.rds")
+
+data_glyphs <- data_characters %>% slice_sample(n = 49) 
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6, ncol = 7)
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/attractor_set_glyphs.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+```
+
+
+```{r plot_attractors_random, eval=FALSE}
 # pre-generate a fixed set of glyphs and randomly sample sequence
 
 # use glyphs based on 2D ODE (see attractors.rmd)
@@ -76,19 +85,19 @@ plot_text <- plot_grid(plotlist = data_print$sequence, ncol = nrow(data_print)) 
 
 ggsave(
   plot_text,
-  file=glue::glue("./R/figures/attractor_set_text.png"),
+  file=glue::glue("./R/figures/attractor_set_text_2.png"),
   dpi=300, width=210, height=295, scale=1, units="mm")
 
 ```
 
-```{r text_attractors_letters, eval=FALSE}
+```{r plot_attractors_letters, eval=FALSE}
 # map glyphs to letters and use existing text to generate glyphs sequence
 
 # use glyphs based on 2D ODE (see attractors.rmd) and add a lower resolution
 data_characters <- read_rds("data/attractor_set_text.rds") %>% 
   mutate(
     xy_ld = map(xy, sample_n, size=250),
-    plot_ld = map(xy_ld, render_plot, alpha=0.2)
+    plot_ld = map(xy_ld, render_plot)
   )
   
 # define a character map
@@ -115,25 +124,28 @@ hash_md5 <- digest::digest(data_characters)
 footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
 
 plot_text <- plot_grid(plotlist = data_print$plot, ncol=1, rel_heights=c(seq_prop)) +
-  draw_label(footer, x=1, y=-0.15, hjust=1, size=9) +
+  draw_label(footer, x=1, y=-0.15, hjust=1, size=6) +
   theme(plot.margin = unit(c(3,1,5,1), "cm")) 
 
 ggsave(
   plot_text,
   file="./R/figures/attractor_set_text_letters.png",
-  dpi=300, width=295, height=210, scale=1.5, units="mm")
+  dpi=300, width=295, height=210, scale=1, units="mm")
 
-# TODO: test patchwork package for layout *design option*
 ```
 
-```{r text_sars, eval=FALSE}
+```{r plot_sars, eval=FALSE}
+library(future)
+library(furrr)
+plan(multisession)
+
 # render SARS-CoV-2 genome sequence
 
 # use glyphs based on 2D ODE (see attractors.rmd) and add a lower resolution
 data_characters <- read_rds("data/attractor_set_text.rds") %>% 
   mutate(
     xy_ld = map(xy, sample_n, size=250),
-    plot_ld = map(xy_ld, render_plot, alpha=0.2)
+    plot_ld = map(xy_ld, render_plot)
   )
 
 # select one glyph per base
@@ -167,8 +179,9 @@ ggsave(
 ```
 
 
-```{r text_attractors_calligraphy, eval=FALSE}
+```{r plot_attractors_compose, eval=FALSE}
 # superpose 2 or more simple glyphs by modifying coordinates
+# lot of tweaking to get an aesthetic result.
 data_characters <- read_rds("data/attractor_set_text.rds") 
 
 plot_text <- data_characters %>% 
@@ -180,31 +193,131 @@ plot_text <- data_characters %>%
 ```
 
 
-```{r text_attractors_cluster, eval=FALSE}
-# use cluster analysis with a high cluster number to define characters, allowing for variability for each character/cluster.
+```{r plot_attractors_cluster, eval=FALSE}
+# use cluster analysis with a high cluster number to define characters,
+# allowing for variability for each character/cluster.
 
 ```
 
 
-```{r text_graph}
+```{r functions_graph_text}
 library(ggraph)
 library(tidygraph)
 
-# generate original glyph type by using networks
+# generate glyph shapes by using networks
 # https://en.wikipedia.org/wiki/Relative_neighborhood_graph
 
-graph <- as_tbl_graph(highschool) %>% 
-    mutate(Popularity = centrality_degree(mode = 'in'))
 
-# plot using ggraph
-ggraph(graph, layout = 'kk') + 
-    geom_edge_fan(aes(alpha = stat(index)), show.legend = FALSE) + 
-    geom_node_point(aes(size = Popularity)) + 
-    facet_edges(~year) 
+# draw n points in [0-1] in x and y
+layout_square <- function(n = 7) {
+  data.frame(x=runif(n), y=runif(n)) 
+}
+
+# draw n points in a unit circle 
+# https://mathworld.wolfram.com/DiskPointPicking.html
+layout_circle <- function(n = 7, r = 1, a = -pi/6) {
+  r = sqrt(runif(n, 0, r))
+  theta = runif(n, 0, 2*pi)
+  
+  # scale and rotate layout
+  layout <- data.frame(
+    x0 = r * cos(theta),
+    y0 = r * sin(theta)) %>% 
+    mutate(x0 = x0 * 0.5) %>% 
+    mutate(
+      x = x0*cos(a) - y0*sin(a),
+      y = x0*sin(a) + y0*cos(a))
+    
+  return(layout %>% select(x,y))
+}
+
+# compute relative neighborhood graph and use points coordinates as graph layout
+render_glyph <- function(data, width = 1, strength = 1, type="smooth") {
+  
+  # graph
+  graph <- data %>% cccd::rng() %>% as_tbl_graph()
+  
+  # plot
+  switch(type,
+         "smooth" = {
+           graph %>%
+             ggraph(layout = data) +
+             geom_edge_diagonal(
+               aes(
+                 edge_width = stat(index),
+                 alpha = stat(index)),
+               lineend = "round", linejoin = "round",
+               strength = 1, n = 100) +
+             scale_edge_alpha(range = c(0.5, 1), guide="none") +
+             scale_edge_width(range = c(1, 2), guide="none")  +
+             coord_fixed(
+               ratio = 1, expand = TRUE,
+               xlim = c(-0.7, 0.7), ylim = c(-0.9, 0.9)) +
+             theme_void()
+         },
+         "line" = {
+           graph %>%
+             ggraph(layout = data) +
+             geom_edge_link(edge_width = width, alpha = 0.5) +
+             geom_node_point(size = width * 1.5) +
+             coord_fixed() + theme_void()
+         },
+         stop("Invalid `type` value")
+  )
+}
+
+
+
+# layout_circle(n=5) %>% render_glyph(type="line")
+
 ```
 
 
-```{r text_spline}
+```{r plot_graph_constellations, eval=FALSE}
+# generate a set of glyphs with a low number of control points
+set.seed(1)
+n_points = 10
+
+data_glyphs <- tibble(pattern=1:49) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_square(n = n_points)),
+    plot = map(layout, render_glyph, type="line", width=1)
+  )
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6)
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_line.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+```
+
+```{r plot_graph_glyphs, eval=FALSE}
+# generate a set of glyphs with a low number of control points
+set.seed(1)
+n_points = 5
+
+data_glyphs <- tibble(pattern=1:49) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_circle(n = n_points)),
+    plot = map(layout, render_glyph, type="smooth", width=1)
+  )
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6) 
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_glyphs.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+# glyph variability
+# TODO some glyphs are related, use this to get variability for the same glyph. 
+# TODO or find main types of control point set and add randomness in a second step
+```
+
+
+```{r plot_spline}
 
 # generate original glyph type by using splines
 # https://inconvergent.net/2017/spline-script/
