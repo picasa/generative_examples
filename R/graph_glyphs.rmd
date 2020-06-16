@@ -1,0 +1,176 @@
+# Generative text system based on graphs
+
+```{r setup}
+library(tidyverse)
+library(cowplot)
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+set.seed(1)
+
+```
+
+```{r functions}
+library(ggraph)
+library(tidygraph)
+
+# generate glyph shapes by using networks
+# https://en.wikipedia.org/wiki/Relative_neighborhood_graph
+
+
+# draw n points in [0-1] in x and y
+layout_square <- function(n = 7) {
+  tibble(n=1:n, x=runif(n), y=runif(n)) 
+}
+
+# draw n points in a unit circle 
+# https://mathworld.wolfram.com/DiskPointPicking.html
+layout_circle <- function(n = 7, r = 1, a = -pi/6) {
+  r = sqrt(runif(n, 0, r))
+  theta = runif(n, 0, 2*pi)
+  
+  # scale and rotate layout
+  layout <- tibble(
+    n = 1:n,
+    x0 = r * cos(theta),
+    y0 = r * sin(theta)) %>% 
+    mutate(x0 = x0 * 0.5) %>% 
+    mutate(
+      x = x0*cos(a) - y0*sin(a),
+      y = x0*sin(a) + y0*cos(a))
+    
+  return(layout %>% select(n,x,y))
+}
+
+# compute relative neighborhood graph and use points coordinates as graph layout
+render_glyph <- function(data, width = 1, strength = 1, type="smooth") {
+  
+  # graph
+  graph <- as.data.frame(data) %>% select(x, y) %>% cccd::rng() %>% as_tbl_graph()
+  
+  # plot
+  switch(type,
+         "smooth" = {
+           graph %>%
+             ggraph(layout = data) +
+             geom_edge_diagonal(
+               aes(edge_width = stat(index)),
+               lineend = "round", linejoin = "round",
+               strength = 1, n = 100) +
+             scale_edge_width(range = c(1, 1.5), guide="none")  +
+             coord_fixed(
+               ratio = 1, expand = TRUE,
+               xlim = c(-0.7, 0.7), ylim = c(-0.9, 0.9)) +
+             theme_void()
+         },
+         "line" = {
+           graph %>%
+             ggraph(layout = data) +
+             geom_edge_link(edge_width = width, alpha = 0.5) +
+             geom_node_point(size = width * 1.5) +
+             coord_fixed() + theme_void()
+         },
+         stop("Invalid `type` value")
+  )
+}
+
+
+
+# layout_circle(n=5) %>% render_glyph(type="line")
+
+```
+
+
+```{r plot_constellations, eval=FALSE}
+# generate a set of glyphs with a low number of control points
+set.seed(1)
+n_points = 10
+
+data_glyphs <- tibble(pattern=1:49) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_square(n = n_points)),
+    plot = map(layout, render_glyph, type="line", width=1)
+  )
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6)
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_line.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+```
+
+```{r plot_graph_glyphs, eval=FALSE}
+# generate a set of glyphs with a low number of control points
+set.seed(1)
+n_points = 5
+
+data_glyphs <- tibble(pattern=1:49) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_circle(n = n_points)),
+    plot = map(layout, render_glyph, type="smooth", width=1)
+  )
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.8) 
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_glyphs.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+```
+
+
+```{r plot_graph_variability}
+library(cluster)
+
+# generate a set of glyphs and add variability for each glyph
+set.seed(1)
+n_points = 5
+n_cluster = 49
+
+# cluster glyphs by layout distance to get medoids then add randomness
+# sampling on cluster population gives too much variability
+# glyphs generated from medoids are not variable enough
+data_glyphs <- tibble(pattern=1:5000) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_circle(n = n_points))
+  )
+
+matrix_layout <- data_glyphs %>% 
+  select(pattern, layout) %>% unnest(layout) %>%
+  pivot_wider(names_from = n, values_from = c(x, y)) %>% 
+  select(-pattern) %>% as.matrix()
+
+cluster_glyphs <- pam(matrix_layout, k = n_cluster, pamonce = 5)
+
+data_medoids <- as_tibble(cluster_glyphs$medoids, rownames="pattern") %>% 
+  pivot_longer(
+    cols = -pattern,
+    names_pattern = "(.)_(.)",
+    names_to = c(".value", "n")
+  ) %>% 
+  group_nest(pattern, .key="layout") %>% 
+  mutate(plot = map(layout, render_glyph, type="smooth", width=1))
+  
+# plot a subset of glyphs in each cluster
+plot_glyphs <- plot_grid(plotlist = data_medoids$plot, scale = 0.8) 
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_glyphs_medoids.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+# 
+data_medoids$layout[[12]] %>% mutate(across(x:y, jitter, amount=1/50)) %>% render_glyph()
+
+```
+
+
+```{r plot_spline_glyphs}
+
+# generate original glyph type by using splines
+# https://inconvergent.net/2017/spline-script/
+```
+

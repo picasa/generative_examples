@@ -1,0 +1,174 @@
+```{r setup}
+library(tidyverse)
+library(future)
+library(furrr)
+library(cluster)
+library(cowplot)
+
+plan(multisession)
+
+# functions
+source("R/attractors_functions.r")
+
+# options
+options(dplyr.summarise.inform=FALSE)
+update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
+
+# parameters
+scale_cell <- scale_color_gradientn(colors = c("#1a4553","#2d84ad","#513b94"), guide = "none") 
+
+color_ink <- "#124270"
+color_bg_cell <- "#d0dfe6"
+
+```
+
+
+```{r map_logistic, eval=FALSE}
+# simulate logistic map for r in [0, 4]
+logistic_r <- 3.9
+
+data_map <- iterate(step_fn = logistic, a = logistic_r, x0 = 0.01, y0=0, iterations = 100)
+
+plot_logistic <- data_map %>%
+  ggplot(aes(n, x)) +
+  geom_line(alpha = 0.2) 
+
+# bifurcation plot : x = f(r) in logistic map.
+logistic_grid <- tibble(r = seq(0, 4, length = 2E3)) %>%
+  mutate(xy = future_map(r, ~ iterate(logistic, ., 0.01, 0, 4E3)))
+
+plot_bifurcation <- logistic_grid %>% unnest(xy) %>% 
+  ggplot(aes(x=r, y=x)) +
+  geom_point(alpha=0.1) + theme_bw()
+
+ggsave(
+  plot_bifurcation,
+  file="./R/figures/attractor_logistic_bifurcation.png",
+  dpi=300, width = 6, height = 4, scale = 1)
+
+```
+
+```{r map_henon, eval=FALSE}
+# simulate Henon map for a in [-1.5, -1]
+
+henon_a <- c(1, 0, -1.4, 0, 0.3, 0, 0, 1, 0, 0, 0, 0)
+
+data_map <- iterate(step_fn = quadratic_2d, a = henon_a, x0 = 0, y0 = 0, iterations = 1E5)
+
+plot_henon <- data_map %>%
+  ggplot(aes(x, y)) +
+  geom_point(alpha = 0.1) + 
+  coord_equal() + theme_void()
+
+# bifurcation plot : x = f(a) in Henon map.
+henon_grid <- tibble(p = seq(-1.5, -1, length = 4E3)) %>%
+  mutate(
+    a = map(p, ~ replace(henon_a, 3, .)),
+    xy = future_map(a, ~ iterate(quadratic_2d, ., 0, 0, 4E3))
+  )
+
+plot_bifurcation <- henon_grid %>% select(-a) %>% unnest(xy) %>% 
+  filter(x > -1.5, x < 1.5) %>% 
+  ggplot(aes(x = -p, y = x)) +
+  geom_point(alpha = 1/20) + theme_bw()
+
+ggsave(
+  plot_bifurcation,
+  file="./R/figures/attractor_henon_bifurcation.png",
+  dpi=300, width = 6, height = 4, scale = 1)
+
+```
+
+
+```{r phase_henon, eval=FALSE}
+# explore both initial conditions and parameterization effects on Henon phase function
+#   x_{n1} = x_n * cos(a) - (y_n - x_n^2) * sin(a)
+#   y_{n1} = x_n * sin(a) + (y_n - x_n^2) * cos(a)
+# phase space plot : xy = f(x0,y0) 
+# inspiration from http://paulbourke.net/fractals/henonphase/
+
+henon_ex = c(-10, 1.2, 1.57, 1.9)
+henon_seq = seq(-10, -9, length=4)
+
+design_parameter <- tibble(a = 1.2)
+
+# set up a factorial design for initial conditions
+design_phase <- crossing(
+  x0 = seq(0, 1, length = 15),
+  y0 = seq(0, 1, length = 15)
+  ) %>%
+  mutate(s = x0 + y0) %>%
+  filter(! y0 == s) %>% 
+  arrange(s) %>% 
+  mutate(condition = seq_along(x0))
+
+design <- crossing(design_parameter, design_phase)
+
+# simulate then resample each output from a set of initial conditions
+data_phase <- design %>%
+  mutate(
+    xy = future_pmap(
+      list(a, x0, y0),
+      ~ iterate(a= ..1, x0=..2, y0=..3, step_fn = henon_phase, iterations = 1E5)),
+    xy_low = future_map(xy, slice_sample, n=2E3)
+  ) 
+
+# plot phase space for each parameter value
+data_plot <- data_phase %>% 
+  filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>% 
+  select(a, condition, x0, y0, xy_low) %>% 
+  unnest(xy_low) %>% 
+  group_nest(a) %>% 
+  mutate(plot = map(data, render_grid, output="single", size=0.2, alpha=1/5))
+  
+plot_phase <- plot_grid(plotlist = data_plot$plot)
+
+# export
+ggsave(
+  plot_phase,
+  file="./R/figures/attractor_henon_phase_01.png",
+  dpi=300, width = 210, height = 210, units = "mm", scale = 1)
+
+```
+
+
+```{r phase_henon_focus, eval=FALSE}
+# focus on initial conditions effects on Henon phase function for a given value of a
+design_parameter <- tibble(a = 1.2)
+
+# draw a LHS design rather than factorial one
+design_phase <- lhs::randomLHS(n=1000, k=2) %>% as_tibble() %>% 
+  transmute(x0=V1, y0=V2, s=x0 + y0) %>% 
+  arrange(s) %>% 
+  mutate(condition = seq_along(x0)) 
+  
+design <- crossing(design_parameter, design_phase)
+
+# simulate then resample each output from a set of initial conditions
+data_phase <- design %>%
+  mutate(
+    xy = future_pmap(
+      list(a, x0, y0),
+      ~ iterate(a= ..1, x0=..2, y0=..3, step_fn = henon_phase, iterations = 1E5)),
+    xy_low = future_map(xy, slice_sample, n=4E3)
+  ) %>% 
+  filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) 
+
+data_plot <- data_phase %>% 
+  select(a, condition, x0, y0, xy_low) %>% 
+  unnest(xy_low)
+
+# plot phase space for a single parameter value 
+plot_phase <- data_plot  %>% 
+  ggplot(aes(x, y)) +
+  geom_point(
+    aes(color = condition),
+    size = 0.2, alpha = 1/3) +
+  coord_fixed() + scale_cell + theme_void() 
+
+ggsave(
+  plot_phase,
+  file="./R/figures/attractor_henon_phase_02.png",
+  dpi=300, width = 210, height = 210, units = "mm", scale = 1)
+
+```
