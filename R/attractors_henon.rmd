@@ -15,7 +15,9 @@ options(dplyr.summarise.inform=FALSE)
 update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # parameters
-scale_cell <- scale_color_gradientn(colors = c("#1a4553","#2d84ad","#513b94"), guide = "none") 
+scale_cell <- scale_color_gradientn(
+  colors = c("#1a4553","#513b94", "#2d84ad","#513b94"),
+  guide = "none") 
 
 color_ink <- "#124270"
 color_bg_cell <- "#d0dfe6"
@@ -86,21 +88,18 @@ ggsave(
 #   y_{n1} = x_n * sin(a) + (y_n - x_n^2) * cos(a)
 # phase space plot : xy = f(x0,y0) 
 # inspiration from http://paulbourke.net/fractals/henonphase/
+set.seed(1)
 
 henon_ex = c(-10, 1.2, 1.57, 1.9)
-henon_seq = seq(-10, -9, length=4)
+henon_seq = seq(1, 1.5, length=9)
 
-design_parameter <- tibble(a = 1.2)
+design_parameter <- tibble(a = henon_seq)
 
 # set up a factorial design for initial conditions
-design_phase <- crossing(
-  x0 = seq(0, 1, length = 15),
-  y0 = seq(0, 1, length = 15)
-  ) %>%
-  mutate(s = x0 + y0) %>%
-  filter(! y0 == s) %>% 
+design_phase <- lhs::randomLHS(n=100, k=2) %>% as_tibble() %>% 
+  transmute(x0=V1, y0=V2, s=x0 + y0) %>% 
   arrange(s) %>% 
-  mutate(condition = seq_along(x0))
+  mutate(condition = seq_along(x0)) 
 
 design <- crossing(design_parameter, design_phase)
 
@@ -133,12 +132,14 @@ ggsave(
 
 
 ```{r phase_henon_focus, eval=FALSE}
-# focus on initial conditions effects on Henon phase function for a given value of a
-design_parameter <- tibble(a = 1.2)
+# focus on initial conditions effects on Henon phase function for a given value of "a"
+set.seed(1)
+
+henon_seq = seq(1, 1.5, length=9)
+design_parameter <- tibble(a = henon_seq[3])
 
 # draw a LHS design rather than factorial one
 design_phase <- lhs::randomLHS(n=1000, k=2) %>% as_tibble() %>% 
-  transmute(x0=V1, y0=V2, s=x0 + y0) %>% 
   arrange(s) %>% 
   mutate(condition = seq_along(x0)) 
   
@@ -168,7 +169,7 @@ plot_phase <- data_plot  %>%
 
 ggsave(
   plot_phase,
-  file="./R/figures/attractor_henon_phase_02.png",
+  file="./R/figures/attractor_henon_phase_021.png",
   dpi=300, width = 210, height = 210, units = "mm", scale = 1)
 
 ```
