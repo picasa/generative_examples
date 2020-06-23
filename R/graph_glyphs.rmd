@@ -9,18 +9,25 @@ library(cowplot)
 
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
+# parameters
 set.seed(1)
 
+# define coordinates systems for plots
+coord_square <- coord_fixed(ratio = 1, expand = TRUE, xlim = c(-1, 1), ylim = c(-1, 1))
+coord_ellipse <- coord_fixed(ratio = 1, expand = TRUE, xlim = c(-0.7, 0.7), ylim = c(-0.9, 0.9))   
 ```
 
 ```{r functions}
 # generate glyph shapes by using networks
 # https://en.wikipedia.org/wiki/Relative_neighborhood_graph
 
-
-# draw n points in [0-1] in x and y
-layout_square <- function(n = 7) {
-  tibble(n=1:n, x=runif(n, -1, 1), y=runif(n, -1, 1)) 
+# draw n points uniformly in in x and y
+layout_square <- function(n = 7, xlim = c(-1,1), ylim = c(-1,1)) {
+  tibble(
+    n=1:n,
+    x=runif(n, xlim[1], xlim[2]),
+    y=runif(n, ylim[1], ylim[2])
+  ) 
 }
 
 # draw n points in a unit circle 
@@ -43,12 +50,8 @@ layout_ellipse <- function(n = 7, r = 1, a = -pi/6) {
   return(layout)
 }
 
-# define coordinates systems for plots
-coord_square <- coord_fixed(ratio = 1, expand = TRUE, xlim = c(-1, 1), ylim = c(-1, 1))
-coord_ellipse <- coord_fixed(ratio = 1, expand = TRUE, xlim = c(-0.7, 0.7), ylim = c(-0.9, 0.9))   
-  
-# draw straight lines as relative neighborhood graph edges
-render_glyph_graph_line <- function(data, width = 0.5, alpha=0.5) {
+# draw relative neighborhood graph with edges as straight lines and nodes as points
+render_graph <- function(data, width = 0.5, alpha=0.5, coord=NULL) {
   
   graph <- as.data.frame(data) %>% select(x, y) %>% cccd::rng() %>% as_tbl_graph()
   
@@ -56,11 +59,23 @@ render_glyph_graph_line <- function(data, width = 0.5, alpha=0.5) {
     ggraph(layout = data) +
     geom_edge_link(edge_width = width, alpha = alpha) +
     geom_node_point(size = width * 1.5) +
-    coord_square + theme_void()
+    coord + theme_void()
 }
 
+# draw relative neighborhood graph with edges as straight lines and nodes as points
+render_graph_line <- function(data, width = 0.5, alpha=1, coord=NULL) {
+  
+  graph <- as.data.frame(data) %>% select(x, y) %>% cccd::rng() %>% as_tbl_graph()
+  
+  graph %>%
+    ggraph(layout = data) +
+    geom_edge_link(edge_width = width, alpha = alpha) +
+    coord + theme_void()
+}
+
+
 # draw Bezier curves as relative neighborhood graph edges
-render_glyph_graph_bezier <- function(data, width = 0.5, alpha=1, strength = 1) {
+render_graph_bezier <- function(data, width = 0.5, alpha=1, strength = 1, coord=NULL) {
   
   graph <- as.data.frame(data) %>% select(x, y) %>% cccd::rng() %>% as_tbl_graph()
   
@@ -69,35 +84,34 @@ render_glyph_graph_bezier <- function(data, width = 0.5, alpha=1, strength = 1) 
     geom_edge_diagonal(
       edge_width = width, alpha=alpha, strength = 1, n = 100,
       lineend = "round", linejoin = "round") +
-    coord_ellipse + theme_void()
+    coord + theme_void()
 }
 
 # draw a spline curve directly on layout points
-render_glyph_spline <- function(data, width = 0.5, alpha=1, crop="ellipse") {
+render_spline <- function(data, width = 0.5, alpha=1, coord=NULL) {
   
-  plot <- data %>% 
+  data %>% 
     ggplot(aes(x, y)) +
     geom_bspline(lineend = "round", size = width, alpha = alpha) +
-    theme_void()
+    coord + theme_void()
   
-  switch(crop,
-         "none" = {plot},
-         "square" = {plot + coord_square},
-         "ellipse" = {plot + coord_ellipse})
 }
 
 # render a paragraph from an existing text and a set of characters
 render_paragraph <- function(text, data, ncol=80, scale=0.9) {
   # split text to characters
   seq <- text %>% str_to_lower() %>% str_split(., "") 
+  
   # map characters to glyph plots, non-match creates NULL plot (blank space with cowplot)
-  data <- tibble(character=seq[[1]]) %>%
-    left_join(data %>% select(character, pattern, plot)) 
+  data <- tibble(character = seq[[1]]) %>%
+    mutate(position = seq_along(character)) %>% 
+    left_join(data %>% select(character, pattern, variation, plot)) %>% 
+    group_by(position, character) %>% 
+    slice_sample(n = 1)
+  
   # render plots here to allow some variability in final layout ?
   plot_grid(plotlist = data$plot, ncol=ncol, scale=scale)
 }
-
-# layout_circle(n=5) %>% render_glyph(type="line")
 
 ```
 
@@ -109,7 +123,7 @@ n_points = 10
 data_glyphs <- tibble(pattern=1:100) %>% 
   mutate(
     layout = map(pattern, ~ layout_square(n = n_points)),
-    plot = map(layout, render_glyph_graph_line)
+    plot = map(layout, render_graph, coord=coord_square)
   )
 
 plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, ncol=10, scale=0.6) + 
@@ -130,7 +144,7 @@ n_points = 5
 data_glyphs <- tibble(pattern=1:100) %>% 
   mutate(
     layout = map(pattern, ~ layout_ellipse(n = n_points)),
-    plot = map(layout, render_glyph_graph_bezier)
+    plot = map(layout, render_graph_bezier, coord=coord_ellipse)
   )
 
 plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, ncol=10, scale=0.8) + 
@@ -143,6 +157,56 @@ ggsave(
 
 ```
 
+```{r plot_graph_wide, eval=FALSE}
+# concatenate glyphs by generating a long layout.
+set.seed(1)
+
+n_points = 10
+x_range = c(-5, 5) 
+  
+data_glyphs <- tibble(pattern=1:49) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_square(n = n_points, xlim=x_range)),
+    plot = map(layout, render_graph_bezier, coord=coord_fixed())
+  ) 
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, nrow=7, scale=1) + 
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_glyphs_wide.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+```
+
+```{r plot_graph_polar, eval=FALSE}
+# concatenate glyphs by generating a long layout and use polar coordinates.
+set.seed(1)
+
+n_points = 20
+x_range = c(0, 2*pi) 
+  
+data_glyphs <- tibble(pattern=1:100) %>% 
+  mutate(
+    layout = map(pattern, ~ layout_square(n = n_points, xlim=x_range)),
+    plot = map(layout, render_graph_line, coord=coord_polar())
+  ) 
+
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale=0.8) + 
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/graph_set_rng_glyphs_polar.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
+
+# layout_square(n = n_points, xlim=x_range) %>% render_glyph_graph_line(coord = coord_polar())
+
+
+```
+
+
 ```{r plot_spline_glyphs, eval=FALSE}
 # generate original glyph type by using splines
 # https://inconvergent.net/2017/spline-script/
@@ -153,7 +217,7 @@ n_points = 6
 data_glyphs <- tibble(pattern=1:100) %>% 
   mutate(
     layout = map(pattern, ~ layout_ellipse(n = n_points)),
-    plot = map(layout, render_glyph_spline)
+    plot = map(layout, render_spline, coord=coord_ellipse)
   )
 
 plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, ncol=10, scale=0.8) + 
@@ -161,83 +225,84 @@ plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, ncol=10, scale=0.8) +
 
 ggsave(
   plot_glyphs,
-  file="./R/figures/graph_set_spline_glyphs.png",
+  file="./R/figures/spline_set_glyphs.png",
   dpi=300, width=210, height=210, scale=1, units="mm")
 
 ```
 
-```{r plot_spline_glyphs_variability, eval=FALSE}
-# add glyph variability using random noise on layout coordinates
-set.seed(3)
+
+```{r plot_spline_lipsum, eval=FALSE}
+# map glyphs to letters and generate text to get glyphs sequence, including variability between glyphs
+set.seed(1)
 n_points = 6
 
-data_glyphs <- tibble(pattern=1:100) %>% 
+# define a character map 
+data_map <- tibble(
+    pattern=1:28,
+    character = c(letters[1:26], ".", ",")
+)
+
+# add glyph variability using random noise on layout coordinates
+data_glyphs <- data_map %>% 
   mutate(
     layout = map(pattern, ~ layout_ellipse(n = n_points))
   ) %>%  
-  slice_sample(n=10) %>% 
-  crossing(r=1:10) %>% 
+  crossing(variation=1:10) %>% 
   mutate(
     layout_rng = map(
       layout,
       ~ unnest(.x, cols = c(x,y)) %>%
         mutate(across(x:y, jitter, amount=1/5))),
-    plot = map(layout_rng, render_glyph_spline)
-  ) 
-
-plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, ncol=10, scale=0.8) + 
-  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
-
-ggsave(
-  plot_glyphs,
-  file="./R/figures/graph_set_spline_glyphs_variability.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
-
-```
-
-```{r plot_spline_lipsum, eval=FALSE}
-# map glyphs to letters and generate text to get glyphs sequence
-
-# define a character map
-set.seed(1)
-n_points = 6
-
-data_glyphs <- tibble(pattern=1:28) %>% 
-  mutate(
-    layout = map(pattern, ~ layout_ellipse(n = n_points)),
-    plot = map(layout, render_glyph_spline, width=0.3, crop="ellipse")
-  ) %>%
-  mutate(character = c(letters[1:26], ".", ","))
+    plot = map(layout_rng, render_spline, width=0.3, coord=coord_ellipse),
+    plot_bold = map(layout_rng, render_spline, width=0.5, coord=coord_ellipse)
+  )
 
 # generate a nonsense text
 set.seed(10)
 seq_text <- stringi::stri_rand_lipsum(n=3)
 seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
 
-data_text <- tibble(text=seq_text) %>% 
-  mutate(plot = map(text, render_paragraph, data=data_glyphs, ncol=80, scale=1.6))
+# render each paragraph using a random variation for each character
+data_text <- tibble(text = seq_text) %>% 
+  mutate(plot_paragraph = map(text, render_paragraph, data=data_glyphs, ncol=80, scale=1.6))
 
 hash_md5 <- digest::digest(data_glyphs)
 footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
 
-plot_text <- plot_grid(plotlist = data_text$plot, ncol=1, rel_heights=c(seq_prop)) +
+# export text
+plot_text <- plot_grid(plotlist = data_text$plot_paragraph, ncol=1, rel_heights=c(seq_prop)) +
   draw_label(footer, x=1, y=-0.15, hjust=1, size=6) +
   theme(plot.margin = unit(c(3,1,5,1), "cm")) 
 
 ggsave(
   plot_text,
-  file="./R/figures/graph_set_text_lipsum.png",
+  file="./R/figures/spline_set_text_lipsum.png",
   dpi=300, width=295, height=210, scale=1, units="mm")
+
+# export map
+plot_glyphs <- plot_grid(plotlist = data_glyphs[1:100,]$plot_bold, ncol=10, scale=0.8) +
+  theme(plot.margin = unit(c(1,1,1,1), "cm"))
+
+ggsave(
+  plot_glyphs,
+  file="./R/figures/spline_set_glyphs_variability.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
 
 ```
 
 
 ```{r plot_composite_glyphs, eval=FALSE}
-# superpose simple glyphs
-
-d <- layout_square(n = 5) 
+# TODO superpose simple glyphs
 
 ```
+
+
+```{r plot_graph_block, eval=FALSE}
+# TODO explore more blocky layouts
+
+```
+
+
 
 ```{r analysis_graph_cluster, eval=FALSE}
 library(cluster)
