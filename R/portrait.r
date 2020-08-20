@@ -9,9 +9,11 @@ future::plan(multisession)
 
 # input image
 set.seed(1)
-name <- "pierre"
+name <- "arthur"
 file <- glue::glue("data/img/input_{name}.jpg")
 data <- load.image(file) %>% grayscale() %>% as.data.frame()
+
+# Traveling salesman algorithm ####
 
 # repeated weighted sampling
 sample_path <- function(data, n=400, weight=5, xlim=range(data$x)) {
@@ -65,11 +67,8 @@ plot_portrait <- data_plot %>%
 # export
 ggsave(plot_portrait, file=glue::glue("./R/figures/ouput_{name}.png"), dpi=200, width = 4, height = 6, scale = 2)
 
-# debug
-plot_debug <- data %>%
-  ggplot(aes(x, -y)) +
-  geom_raster(aes(fill=value)) +
-  geom_point(data=data_sampled, color="white", alpha=0.1) +
-  geom_path(data=data_path, color="white", alpha=0.5) +
-  coord_fixed()
+
+
+# Colonization algorithm ####
+# https://github.com/aschinchon/colonizing-franky
 

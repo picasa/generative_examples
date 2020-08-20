@@ -163,11 +163,11 @@ set.seed(1)
 
 n_points = 10
 x_range = c(-5, 5) 
-  
+
 data_glyphs <- tibble(pattern=1:49) %>% 
   mutate(
     layout = map(pattern, ~ layout_square(n = n_points, xlim=x_range)),
-    plot = map(layout, render_graph_bezier, coord=coord_fixed())
+    plot = map(layout, render_graph_bezier, coord = coord_fixed())
   ) 
 
 plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, nrow=7, scale=1) + 
@@ -238,8 +238,8 @@ n_points = 6
 
 # define a character map 
 data_map <- tibble(
-    pattern=1:28,
-    character = c(letters[1:26], ".", ",")
+    pattern=1:29,
+    character = c(letters[1:26], ".", ",", "?")
 )
 
 # add glyph variability using random noise on layout coordinates
@@ -301,7 +301,6 @@ ggsave(
 # TODO explore more blocky layouts
 
 ```
-
 
 
 ```{r analysis_graph_cluster, eval=FALSE}

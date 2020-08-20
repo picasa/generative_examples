@@ -25,10 +25,12 @@ color_old <- "#FEFAEE"
 
 
 ```{r plot_attractors_sample, eval=FALSE}
+set.seed(1)
+
 data_characters <- read_rds("data/attractor_set_text.rds")
 
-data_glyphs <- data_characters %>% slice_sample(n = 49) 
-plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6, ncol = 7)
+data_glyphs <- data_characters %>% slice_sample(n = 100) 
+plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6, ncol = 10)
 
 ggsave(
   plot_glyphs,
