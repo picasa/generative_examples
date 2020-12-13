@@ -1,0 +1,135 @@
+# Hunting for attractors
+
+This work is a direct reuse of results from Sprott (1993)^1, Bourke [link](http://paulbourke.net/fractals/sprott/) and the R implementation of quadratic map functions from Lindberg [link](https://blog.k2h.se/post/hunting-for-attractors/).
+This code sample parameter space, filter aesthetic functions based on different criterias (Lyapunov exponent, summary of point density distribution, correlation) and display them in a grid.
+
+1. Sprott, J. C. (1993). Automatic generation of strange attractors. Computers & Graphics, 17(3), 325-332.
+
+```{r setup}
+library(tidyverse)
+library(future)
+library(furrr)
+library(cowplot)
+
+plan(multisession)
+
+# options
+options(dplyr.summarise.inform=FALSE)
+update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
+
+# functions
+source("R/attractors_functions.r")
+
+```
+
+
+```{r sample, eval=FALSE}
+
+set.seed(1)
+
+n_total <- 5e5
+
+# generate a set of unique 12 letters sequences from a set of 25 letters (25^12 set)
+# get parameters corresponding to sampled sequence
+table_set <- tibble(pattern = 1:n_total) %>% 
+  mutate(name = map(pattern, ~ sample_sequence(set = LETTERS[1:25], length = 12))) %>% 
+  distinct(name, .keep_all = TRUE) %>% 
+  mutate(p = map(name, ~ get_parameters(string = .))) 
+
+# filter for functions that do not converge into a single point (25/1e4 @ 1000)
+table_set <- table_set %>% 
+  mutate(L = future_map_dbl(p, ~ L(quadratic_map, ., 0, 0, iterations = 1000))) %>%
+  filter(L > 0) %>% unnest(name)
+
+# compute xy data and point density as an aesthetic metric. (28 / 1000 @ 5000)
+# filter diverging functions 
+table_set <- table_set %>%
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 5000))) %>% 
+  filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
+  mutate(density = map(xy, density_metric, gridsize = 20)) %>% 
+  mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
+  select(-xy) %>% unnest(density)
+
+# export
+saveRDS(table_set, file="data/attractor_parameter_set_discrete.rds", compress="gzip")
+
+```
+
+```{r plot, eval=FALSE}
+
+# plot 5 cm square plot in A2 format (40 x 60) n = 8*12 = 96, quality=90
+# plot 5 cm square plot in A1 format (60 x 80) n = 12*16 = 192
+
+# load results from previously intensive sampling
+table_set <- read_rds("data/attractor_parameter_set_discrete.rds")
+
+# filter functions (~ 0.5 % of sampled:aesthetic)
+table_collection <- table_set %>%
+  filter(between(L, 0.1, 0.4)) %>% 
+  filter(d > 0.5) %>% 
+  filter(cv < 1) %>% 
+  filter(m < 0.5) %>% 
+  filter(abs(r) < 0.8)
+
+# compute quadratic map at high resolution for a random subset of functions
+# post-process xy data (filter early iterations, rescaling)
+# do two subsetting because some rare functions diverge for large iterations
+set.seed(1)
+
+data_collection <- table_collection %>%
+  slice_sample(n = 100) %>% 
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 4e5))) %>% 
+  filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
+  mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
+  slice_sample(n = 96)
+
+# compute plots for selected functions
+data_collection <- data_collection %>%
+  mutate(plot = map(xy, ~ render_plot(., size = 0.1))) %>% 
+  arrange(name)
+
+plot_collection <- plot_grid(
+  plotlist = data_collection$plot, ncol = 8, scale = 0.7,
+  labels = str_to_title(data_collection$name),
+  label_x = 0.2, label_y = 0.15, label_size = 7,
+  label_fontface = "italic", label_fontfamily = "NewCenturySchoolbook")
+
+ggsave(
+  plot_collection,
+  file = "./R/figures/attractor/set_collection_01.png",
+  dpi=300, width=400, height=600, scale=1, units="mm")
+
+```
+
+```{r explore, eval=FALSE}
+
+# quick plot
+plot_glance <- table_set %>% 
+  filter(L > 0.1, L < 0.4) %>% 
+  filter(d > 0.4) %>% 
+  filter(cv < 1) %>% 
+  filter(m < 0.5) %>% 
+  slice_sample(n = 10) %>% 
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1e4))) %>% 
+  mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
+  mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
+  unnest(xy) %>% 
+  ggplot(aes(x, y)) +
+  geom_point(size = 0.3, alpha = 0.1) +
+  facet_wrap(vars(name)) + coord_equal() + theme_void() 
+
+# plot positions of aesthetic functions
+plot_solution <- table_set %>%
+  filter(L > 0.1) %>%
+  ggplot(aes(x = d, y = cv)) +
+  stat_density_2d(geom = "raster", aes(fill = after_stat(density)), contour = FALSE) +
+  scale_fill_viridis_c()
+
+# plot from letter code (e.g. WKDTLOOGQEHP FIRCDERRPVLD MCRBIPOPHTBN GLXOESFTTPSV QFFVSLMJJGCR)
+plot_single <- iterate(
+  quadratic_map, get_parameters(string = "SUMCUGEHROAQ"),
+  0.05, 0.05, iterations = 1E5) %>%
+  render_plot()
+
+```
+

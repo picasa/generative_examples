@@ -3,28 +3,81 @@
 
 ```{r setup}
 library(tidyverse)
+library(future)
+library(furrr)
 library(cowplot)
+
+plan(multisession)
+
+# options
+options(dplyr.summarise.inform=FALSE)
+update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # functions
 source("R/attractors_functions.r")
 
-# options
+```
+
+
+```{r sample, eval=FALSE}
 set.seed(1)
 
-scale_ink <- scale_color_gradientn(
-  colors = c("white","grey60","#036564", "#033649", "#031634")
-  )
+n_total <- 5e5
 
-scale_grey <- scale_colour_gradient(low="white", high="black")
-scale_white <- scale_colour_gradient(low="black", high="white")
+# sample parameter space and discard convergent functions 
+table_set <- tibble(pattern = 1:n_total) %>%
+  mutate(p = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
+  mutate(L = future_map_dbl(p, ~ L(quadratic_map, ., 0, 0, iterations = 1000))) %>%
+  filter(L > 0)
 
-color_ink <- "#124270"
-color_old <- "#FEFAEE"
+# compute xy data and point density as an aesthetic metric. (28 / 1000 @ 5000)
+# filter diverging functions 
+table_set <- table_set %>%
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 2000))) %>% 
+  filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
+  mutate(density = map(xy, density_metric, gridsize = 20)) %>% 
+  mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
+  select(-xy) %>% unnest(density) %>% arrange(pattern)
+
+# export
+saveRDS(table_set, file="data/attractor_parameter_set.rds", compress="gzip")
 
 ```
 
 
-```{r plot_attractors_sample, eval=FALSE}
+```{r select, eval=FALSE}
+table_set <- read_rds("data/attractor_parameter_set.rds")
+
+# manually select interesting glyphs on this list
+list_selected <- c(
+  31, 75, 737, 1556, 2051, 2128, 2669, 2691, 3292, 3603,
+  3723, 3788, 4016, 4449, 5797, 13767, 14315, 14603, 15157, 16089, #11813
+  16638, 20341, 21548, 21847, 21895, 23384, 24190, 24586, 24939, 24943,
+  25319, 25384, 25546, 25990, 25998, 26367, 27606, 29238, 30093, 30647,
+  31870, 33263, 33905, 37160, 37461, 37513, 37657, 39385, 39768, 43188, 
+  43796, 44876, 45284, 45485, 46358, 46507, 48313, 48534, 48733, 49585,
+  50331, 50971, 52304, 52976, 53006, 53892, 54577, 54623, 54877, 56037,
+  56088, 56117, 56221, 57732, 57737, 59505, 60556, 61081, 61123, 61241,
+  61300, 62111, 62750, 62809, 62857, 64655, 66345, 66370, 66559, 67017,
+  67491, 68132, 68687, 69870, 70816, 71408, 71602, 71911, 72473, 74345,
+  74352, 74423, 74546, 74715, 74853, 76368, 77530, 77967, 78869, 79121,
+  81122, 82427, 82456, 83275, 83833, 83982, 84713, 85638, 85696, 87787,
+  91006, 91040, 91666, 92888, 93357, 94699, 95214, 96825, 98361, 99661
+)
+
+# generate a low resolution plot of characters to export
+data_characters <- table_set %>%
+  filter(pattern %in% list_selected) %>% 
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1000))) %>% 
+  mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
+  mutate(plot = map(xy, ~ render_plot(., size = 0.5, alpha = 0.2)))
+
+write_rds(data_characters, "data/attractor_set_text.rds", compress="gz")
+
+```
+
+
+```{r plot_sample, eval=FALSE}
 set.seed(1)
 
 data_characters <- read_rds("data/attractor_set_text.rds")
@@ -34,51 +87,46 @@ plot_glyphs <- plot_grid(plotlist = data_glyphs$plot, scale = 0.6, ncol = 10)
 
 ggsave(
   plot_glyphs,
-  file="./R/figures/attractor_set_glyphs.png",
+  file="./R/figures/attractors/set_glyphs.png",
   dpi=300, width=210, height=210, scale=1, units="mm")
 
 ```
 
 
-```{r plot_attractors_random, eval=FALSE}
-# pre-generate a fixed set of glyphs and randomly sample sequence
+```{r plot_sequences, eval=FALSE}
+# randomly sample sequence of glyphs generated using quadratic maps
 
-# use glyphs based on 2D ODE (see attractors.rmd)
+# load glyph library
 data_characters <- read_rds("data/attractor_set_text.rds")
 
 # sample different glyphs in different sequence length to emulate text
 set.seed(1)
 
-data_print <- tibble(character=sample(20:60, size=9, replace = TRUE)) %>% 
+data_text <- tibble(character=sample(20:60, size=9, replace = TRUE)) %>% 
   mutate(sequence = map(character, render_sequence, data=data_characters$plot, length=60))
 
-hash_md5 <- digest::digest("data/attractor_set_text.rds", file=TRUE)
-footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
-
-plot_text <- plot_grid(plotlist = data_print$sequence, ncol = nrow(data_print)) + 
-  draw_label(footer, x=0.99, y=0.01, hjust=1, size=6, color=color_ink) +
-  theme(panel.background = element_rect(fill = "white"))
+plot_text <- plot_grid(plotlist = data_text$sequence, ncol = nrow(data_text)) 
 
 ggsave(
   plot_text,
-  file=glue::glue("./R/figures/attractor_set_text_2.png"),
+  file="./R/figures/attractors/text_sequences.png",
   dpi=300, width=210, height=295, scale=1, units="mm")
 
 ```
 
-```{r plot_attractors_lipsum, eval=FALSE}
-# map glyphs to letters and use existing text to generate glyphs sequence
+```{r plot_lipsum, eval=FALSE}
+# map glyphs to letters and use generated text to create glyphs sequence
 
-# use glyphs based on 2D ODE (see attractors.rmd) and add a lower resolution
+set.seed(1)
+
+# lower resolution from pre-generated glyphs 
 data_characters <- read_rds("data/attractor_set_text.rds") %>% 
   mutate(
     xy_ld = map(xy, sample_n, size=250),
-    plot_ld = map(xy_ld, render_plot)
+    plot_ld = map(xy_ld, render_plot, size = 0.5, alpha = 0.2)
   )
   
 # define a character map
-set.seed(1)
-
 chr_dot <- 43188
 chr_comma <- 1556
 
@@ -90,38 +138,28 @@ data_glyphs <- data_characters %>%
 
 # generate a nonsense text
 set.seed(10)
-seq_text <- stringi::stri_rand_lipsum(n=3)
+seq_text <- stringi::stri_rand_lipsum(n_paragraphs = 3)
 seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
 
-data_print <- tibble(text=seq_text) %>% 
-  mutate(plot = map(text, render_paragraph, data=data_glyphs, ncol=80, scale=1))
+data_text <- tibble(text = seq_text) %>% 
+  mutate(plot = map(text, render_paragraph, data = data_glyphs, ncol = 80, scale = 0.90))
 
-hash_md5 <- digest::digest(data_characters)
-footer <- paste(Sys.Date(), substr(hash_md5, start = 1, stop = 7))
-
-plot_text <- plot_grid(plotlist = data_print$plot, ncol=1, rel_heights=c(seq_prop)) +
-  draw_label(footer, x=1, y=-0.15, hjust=1, size=6) +
+plot_text <- plot_grid(plotlist = data_text$plot, ncol=1, rel_heights=c(seq_prop)) +
   theme(plot.margin = unit(c(3,1,5,1), "cm")) 
 
 ggsave(
   plot_text,
-  file="./R/figures/attractor_set_text_lipsum.png",
+  file="./R/figures/attractors/text_lipsum.png",
   dpi=300, width=295, height=210, scale=1, units="mm")
 
 ```
 
 ```{r plot_sars, eval=FALSE}
-library(future)
-library(furrr)
-plan(multisession)
-
-# render SARS-CoV-2 genome sequence
-
-# use glyphs based on 2D ODE (see attractors.rmd) and add a lower resolution
+# lower resolution from pre-generated glyphs 
 data_characters <- read_rds("data/attractor_set_text.rds") %>% 
   mutate(
     xy_ld = map(xy, sample_n, size=250),
-    plot_ld = map(xy_ld, render_plot)
+    plot_ld = map(xy_ld, render_plot, size = 0.5, alpha = 0.2)
   )
 
 # select one glyph per base
@@ -149,24 +187,11 @@ plot_text <- plot_grid(plotlist = data_print$plot, ncol=1) +
 
 ggsave(
   plot_text,
-  file="./R/figures/attractor_set_text_sars.png",
+  file="./R/figures/attractors/text_sars.png",
   dpi=300, width=210, height=210, scale=1.5, units="mm")
 
 ```
 
-
-```{r plot_attractors_compose, eval=FALSE}
-# superpose 2 or more simple glyphs by modifying coordinates
-# lot of tweaking to get an aesthetic result.
-data_characters <- read_rds("data/attractor_set_text.rds") 
-
-plot_text <- data_characters %>% 
-  ggplot(aes(x,y)) +
-  geom_point(data = . %>% filter(pattern==20341) %>% unnest(xy)) +
-  geom_point(data = . %>% filter(pattern==26367) %>% unnest(xy) %>%  mutate(x=x+0.6, y=y+0)) +
-  coord_equal() + theme_void()
-
-```
 
 
 
