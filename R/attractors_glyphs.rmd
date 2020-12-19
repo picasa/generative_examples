@@ -35,7 +35,7 @@ table_set <- tibble(pattern = 1:n_total) %>%
 table_set <- table_set %>%
   mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 2000))) %>% 
   filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
-  mutate(density = map(xy, density_metric, gridsize = 20)) %>% 
+  mutate(density = map(xy, density_metric, gridsize = 50)) %>% 
   mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
   select(-xy) %>% unnest(density) %>% arrange(pattern)
 

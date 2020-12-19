@@ -89,7 +89,7 @@ normalize_xy <- function(data) {
   
   range <- with(data, max(max(x) - min(x), max(y) - min(y)))
   
-  data <- data %>%
+  data %>%
     mutate(
       x = (x - min(x)) / range,
       y = (y - min(y)) / range
@@ -97,12 +97,13 @@ normalize_xy <- function(data) {
 }
 
 # bin coordinates to reduce resolution
-bin_xy <- function(data, gridsize = 1000) {
-  data %>%
+bin_xy <- function(data, gridsize = 20) {
+ 
+   data %>%
     group_by(x = round(x * gridsize) / gridsize,
              y = round(y * gridsize) / gridsize) %>%
-    summarize(n = n())
-  
+    summarize(n = n()) %>% ungroup()
+
 }
 
 
@@ -125,10 +126,10 @@ get_parameters <- function(
 }
 
 # estimate the metrics for density distribution of points per grid cell
-density_metric <- function(data, gridsize=20) {
+density_metric <- function(data, gridsize = 20) {
   data %>%
-    group_by(x = ntile(x, gridsize), y = ntile(y, gridsize)) %>%
-    summarize(n = n()) %>% ungroup() %>% 
+    normalize_xy() %>% 
+    bin_xy(gridsize) %>%  
     summarise(
       d = n() / gridsize^2,
       m = mean(n) / sum(n) * 100,

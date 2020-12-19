@@ -20,6 +20,10 @@ update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 # functions
 source("R/attractors_functions.r")
 
+# parameters
+size_a1 <- c(841, 594)
+size_a2 <- c(594, 420)
+
 ```
 
 
@@ -46,7 +50,7 @@ table_set <- table_set %>%
 table_set <- table_set %>%
   mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 5000))) %>% 
   filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
-  mutate(density = map(xy, density_metric, gridsize = 20)) %>% 
+  mutate(density = map(xy, ~ density_metric(., gridsize = 50))) %>% 
   mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
   select(-xy) %>% unnest(density)
 
@@ -63,23 +67,23 @@ saveRDS(table_set, file="data/attractor_parameter_set_discrete.rds", compress="g
 # load results from previously intensive sampling
 table_set <- read_rds("data/attractor_parameter_set_discrete.rds")
 
-# filter functions (~ 0.5 % of sampled:aesthetic)
+# filter functions (aesthetic:sampled ~ 0.1 %)
 table_collection <- table_set %>%
   filter(between(L, 0.1, 0.4)) %>% 
-  filter(d > 0.5) %>% 
-  filter(cv < 1) %>% 
-  filter(m < 0.5) %>% 
+  filter(d > 0.30) %>% 
+  filter(cv < 1.1) %>% 
   filter(abs(r) < 0.8)
 
 # compute quadratic map at high resolution for a random subset of functions
 # post-process xy data (filter early iterations, rescaling)
-# do two subsetting because some rare functions diverge for large iterations
-set.seed(1)
+# filter rare functions that diverge/converge for large iterations
+set.seed(3)
 
 data_collection <- table_collection %>%
   slice_sample(n = 100) %>% 
-  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 4e5))) %>% 
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 5e5))) %>% 
   filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
+  filter(map_lgl(xy, ~ density_metric(.) %>% pull(cv) < 2)) %>% 
   mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
   slice_sample(n = 96)
 
@@ -88,31 +92,48 @@ data_collection <- data_collection %>%
   mutate(plot = map(xy, ~ render_plot(., size = 0.1))) %>% 
   arrange(name)
 
+# build plot
 plot_collection <- plot_grid(
   plotlist = data_collection$plot, ncol = 8, scale = 0.7,
   labels = str_to_title(data_collection$name),
   label_x = 0.2, label_y = 0.15, label_size = 7,
-  label_fontface = "italic", label_fontfamily = "NewCenturySchoolbook")
+  label_fontface = "italic",
+  label_fontfamily = "NewCenturySchoolbook") +
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
 
 ggsave(
   plot_collection,
-  file = "./R/figures/attractor/set_collection_01.png",
-  dpi=300, width=400, height=600, scale=1, units="mm")
+  file = "./R/figures/attractors/set_collection_03.png",
+  dpi=300, width=size_a2[2], height=size_a2[1], scale=1, units="mm")
+
+# save_plot()
 
 ```
 
+```{r debug, eval=FALSE}
+
+index <- data_collection %>% select(-p, -xy, -plot)
+
+index_new <- data_collection %>% 
+  mutate(density = map(xy, ~ density_metric(., gridsize = 50))) %>% 
+  select(-(L:r), -(p:plot)) %>% unnest(density)
+
+```
+
+
 ```{r explore, eval=FALSE}
+# load results from previously intensive sampling
+table_set <- read_rds("data/attractor_parameter_set_discrete.rds")
 
 # quick plot
 plot_glance <- table_set %>% 
-  filter(L > 0.1, L < 0.4) %>% 
-  filter(d > 0.4) %>% 
-  filter(cv < 1) %>% 
-  filter(m < 0.5) %>% 
-  slice_sample(n = 10) %>% 
+  filter(L > 0.4, L < 0.5) %>%
+  filter(d > 0.3) %>% 
+  filter(cv < 1.1) %>% 
+  filter(abs(r) < 0.95) %>% 
+  slice_sample(n = 16) %>% 
   mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1e4))) %>% 
   mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
-  mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
   unnest(xy) %>% 
   ggplot(aes(x, y)) +
   geom_point(size = 0.3, alpha = 0.1) +
@@ -120,15 +141,15 @@ plot_glance <- table_set %>%
 
 # plot positions of aesthetic functions
 plot_solution <- table_set %>%
-  filter(L > 0.1) %>%
-  ggplot(aes(x = d, y = cv)) +
+  filter(L > 0.1, cv < 1.5) %>%
+  ggplot(aes(x = d, y = L)) +
   stat_density_2d(geom = "raster", aes(fill = after_stat(density)), contour = FALSE) +
   scale_fill_viridis_c()
 
 # plot from letter code (e.g. WKDTLOOGQEHP FIRCDERRPVLD MCRBIPOPHTBN GLXOESFTTPSV QFFVSLMJJGCR)
 plot_single <- iterate(
-  quadratic_map, get_parameters(string = "SUMCUGEHROAQ"),
-  0.05, 0.05, iterations = 1E5) %>%
+  quadratic_map, get_parameters(string = "WKDTLOOGQEHP"),
+  0.05, 0.05, iterations = 1E5) %>% normalize_xy() %>% 
   render_plot()
 
 ```
