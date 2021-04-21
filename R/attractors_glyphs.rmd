@@ -10,7 +10,7 @@ library(cowplot)
 plan(multisession)
 
 # options
-options(dplyr.summarise.inform=FALSE)
+options(dplyr.summarise.inform = FALSE)
 update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # functions
@@ -142,9 +142,14 @@ seq_text <- stringi::stri_rand_lipsum(n_paragraphs = 3)
 seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
 
 data_text <- tibble(text = seq_text) %>% 
-  mutate(plot = map(text, render_paragraph, data = data_glyphs, ncol = 80, scale = 0.90))
+  mutate(plot = map(
+    text,
+    ~ render_paragraph(., data = data_glyphs, ncol = 80, scale = 0.90))
+  )
 
-plot_text <- plot_grid(plotlist = data_text$plot, ncol=1, rel_heights=c(seq_prop)) +
+plot_text <- plot_grid(
+  plotlist = data_text$plot,
+  ncol=1, rel_heights=c(seq_prop)) +
   theme(plot.margin = unit(c(3,1,5,1), "cm")) 
 
 ggsave(
@@ -152,6 +157,10 @@ ggsave(
   file="./R/figures/attractors/text_lipsum.png",
   dpi=300, width=295, height=210, scale=1, units="mm")
 
+ggsave(
+  plot_text,
+  file="./R/figures/attractors/text_lipsum_square.png",
+  dpi=300, width=210, height=210, scale=1, units="mm")
 ```
 
 ```{r plot_sars, eval=FALSE}
@@ -191,7 +200,5 @@ ggsave(
   dpi=300, width=210, height=210, scale=1.5, units="mm")
 
 ```
-
-
 
 
