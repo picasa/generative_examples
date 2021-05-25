@@ -107,50 +107,13 @@ ggsave(
   dpi=300, width=size_a2[2], height=size_a2[1], scale=1, units="mm")
 
 # save_plot()
+# index <- data_collection %>% select(-p, -xy, -plot)
+# 
+# index_new <- data_collection %>% 
+#   mutate(density = map(xy, ~ density_metric(., gridsize = 50))) %>% 
+#   select(-(L:r), -(p:plot)) %>% unnest(density)
+
 
 ```
 
-```{r debug, eval=FALSE}
-
-index <- data_collection %>% select(-p, -xy, -plot)
-
-index_new <- data_collection %>% 
-  mutate(density = map(xy, ~ density_metric(., gridsize = 50))) %>% 
-  select(-(L:r), -(p:plot)) %>% unnest(density)
-
-```
-
-
-```{r explore, eval=FALSE}
-# load results from previously intensive sampling
-table_set <- read_rds("data/attractor_parameter_set_discrete.rds")
-
-# quick plot
-plot_glance <- table_set %>% 
-  filter(L > 0.4, L < 0.5) %>%
-  filter(d > 0.3) %>% 
-  filter(cv < 1.1) %>% 
-  filter(abs(r) < 0.95) %>% 
-  slice_sample(n = 16) %>% 
-  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1e4))) %>% 
-  mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
-  unnest(xy) %>% 
-  ggplot(aes(x, y)) +
-  geom_point(size = 0.3, alpha = 0.1) +
-  facet_wrap(vars(name)) + coord_equal() + theme_void() 
-
-# plot positions of aesthetic functions
-plot_solution <- table_set %>%
-  filter(L > 0.1, cv < 1.5) %>%
-  ggplot(aes(x = d, y = L)) +
-  stat_density_2d(geom = "raster", aes(fill = after_stat(density)), contour = FALSE) +
-  scale_fill_viridis_c()
-
-# plot from letter code (e.g. WKDTLOOGQEHP FIRCDERRPVLD MCRBIPOPHTBN GLXOESFTTPSV QFFVSLMJJGCR)
-plot_single <- iterate(
-  quadratic_map, get_parameters(string = "WKDTLOOGQEHP"),
-  0.05, 0.05, iterations = 1E5) %>% normalize_xy() %>% 
-  render_plot()
-
-```
 

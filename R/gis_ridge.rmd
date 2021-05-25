@@ -1,0 +1,117 @@
+# use open-data digital elevation model (ESRI ASCII Raster)
+
+```{r setup}
+library(tidyverse)
+library(stars)
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+# functions
+source("R/paper_functions.r")
+source("R/gis_functions.r")
+```
+
+## Outline
+
+Digital Elevation Model (DEM) represents elevation as function of latitude and longitude. These illustrations are made of multiple lines of elevation as a function of longitude, for discrete latitude values. Overplotting is avoided by checking for a minimal distance between two lines. These three examples explore the use of :
+
+* a coarse and easy source for elevation data ([elevatr](https://github.com/jhollist/elevatr) package), for a broad view (~ 450 km)
+* a precise DEM at a the scale of a specific valley (Ossau, FR, ~ 20 km) using IGN 5m RGE ALTI DEM ([link](https://geoservices.ign.fr/documentation/diffusion/telechargement-donnees-libres.html#rge-alti-5-m)) 
+* a focus on a narrow zone (Loudenvielle, FR, ~ 3 km), with a fine initial sampling resolution for the elevation (30 cm). 
+
+
+```{r plot_pyrenees, eval=FALSE}
+
+# define location and bounding box
+coord = c(lat=43.231196, lon = 0) # Tarbes
+z_scale = 2 # ratio of elevation:cell unit
+
+# convert DEM to a dataframe and subset based on bounding box
+point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
+  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
+
+box <- buffer_rectangle(
+  point, size = 450E3, y_shift = - 60E3, x_shift = 30E3,
+  orientation="h", ratio = 2)
+
+# use AWS terrain tile (30m)
+dem <- elevatr::get_elev_raster(point, z = 7) 
+
+dem_subset <- dem %>% st_as_stars() %>% 
+  st_crop(box) %>% as_tibble() %>%
+  select(x,y, z = 3) %>% 
+  mutate(x = x, y = y, z = z * z_scale)
+
+plot_ridge <- dem_subset %>%
+  render_ridge(
+    n_ridges = 200, n_threshold = 5,
+    z_shift = 1000, z_threshold = 100) 
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/ridge_pyrenee_00.png",
+  dpi=300, width=format$a3[2], height = format$a3[2]/ratio$uni ,
+  scale=1, units="mm")
+
+```
+
+```{r plot_ossau, eval=FALSE}
+
+
+# define location and bounding box
+coord = c(lat=42.9136778, lon=-0.4015139) # Cezy
+
+# use RGE ALTI 5m DEM
+dem <- coord %>% read_dem(buffer = 12000, dep="64", source = "rge_alti")
+
+# convert DEM to a dataframe and subset based on bounding box
+point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
+  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
+
+box <- buffer_rectangle(point, size = 22E3, y_shift = 1E3, orientation="v")
+
+dem_subset <- dem %>% st_crop(box) %>% 
+  as_tibble() %>% mutate(x = -x, y = -y)
+
+plot_ridge <- dem_subset %>%
+  render_ridge(
+    n_ridges = 300, n_drop = 10, n_threshold = 15,
+    z_shift = 10, z_threshold = 8)
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/ridge_ossau_01.png",
+  dpi=300, width=format$a3[2], height=format$a3[2]/ratio$wide, scale=1, units="mm")
+
+```
+
+```{r plot_loudenvielle}
+
+# Test ridge line rendering with true HR DEM data (5m, 30cm source)
+
+coord = c(lat=42.744617, lon = 0.410614) # Loudenvielle
+z_scale = 1 # ratio of elevation:cell unit
+
+# convert DEM to a dataframe and subset based on bounding box
+point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
+  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
+
+# RGE ALTI (5m)
+dem <- coord %>% read_dem(buffer = 5000, dep="65", source = "rge_alti")
+
+box <- buffer_rectangle(point, size = 3E3, orientation="v")
+
+dem_subset <- dem %>% st_as_stars() %>% 
+  st_crop(box) %>% as_tibble() %>%
+  select(x0=x, y0=y, z0 = 3) %>% 
+  mutate(x = -x0, y = -y0, z = z0 * z_scale) %>% 
+  select(x,y,z)
+
+plot_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 300, n_threshold = 0, z_shift = 5, z_threshold = 7) 
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/ridge_loudenvielle_00.png",
+  dpi=300, width=format$a4[1], height = format$a4[2],
+  scale=1, units="mm")
+
+```
+
