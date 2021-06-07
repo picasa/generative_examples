@@ -1,0 +1,127 @@
+# Explore the use of sequences to generate plant-like visualizations
+
+```{r setup}
+library(tidyverse)
+library(ggforce)
+library(furrr)
+library(cowplot)
+
+plan(multisession)
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+# functions
+source("R/paper_functions.r")
+source("R/sequence_functions.r")
+
+```
+
+## Outline
+
+A sequence of integers is generated from a set of rules (here, the Collatz [conjecture](https://en.wikipedia.org/wiki/Collatz_conjecture)). Then, a curve is defined by mapping sequence elements to segment length, with a fixed angle between segments. Multiple curves are computed to constitute a node, and multiple nodes to constitute a stem. The only random elements are initial value for the sequence, and the angle between curve segments. These two examples explore the use of :
+
+* generating multiple curves and shifting vertically their starting point by a fixed amount (plot_node_dense)
+* generating multiple node with attributes (number of leaves, scale, angle, position) as a function of a stem-like structure (plot_stem).
+
+```{r plot_node_dense, eval=FALSE}
+# plot a single node with dense polygons
+
+p_seed = 5
+p_node = 300
+p_imax = 100
+p_lmax = 3000
+p_angle = 40
+p_shift = 4
+p_width = 10
+p_shape = "spline"
+
+# seeds 4, 8, 11
+data_dense <- gen_node(
+  n = p_node, imax = p_imax, lmax = p_lmax,
+  amin = -p_angle, amax = p_angle, 
+  shift = p_shift, width = p_width, seed = p_seed, shape=p_shape)
+
+plot_dense <- data_dense %>%
+  render_node(radius = 0, margin = 10,
+    xlim = c(-100, 100), ylim = c(180,460))
+
+ggsave(
+  plot_dense, file = "R/figures/sequence/collatz_dense_05.png",
+  width=format$a4[1], height = format$a4[2],
+  dpi=300, scale=1, units="mm")
+
+```
+
+
+
+```{r plot_stem, eval=FALSE}
+
+set.seed(1)
+
+p_stem = 73 # starting point for the stem sequence
+p_stem_angle = 10 # angle between successive stem segments
+p_node = 35 # node number in the branch
+p_node_angle = c(140, 10) # mean and sd of angle between nodes and stem
+p_scale = 0.5 # stem scale
+
+# set node parameters along the stem
+data_topology <- tibble(
+  node = seq_len(p_node),
+  leaf = seq(15, 10, len = p_node),
+  angle = seq(10, 5, len = p_node),
+  lmax = seq(700, 400, len = p_node),
+  scale = seq(1.2, 0.3, len = p_node)
+  )
+
+# generate nodes as a function of parameter list
+data_node <- data_topology %>% 
+  mutate(
+    data = pmap(
+      list(leaf, angle, lmax, scale),
+      ~ gen_node(
+        n = ..1, amin = -..2, amax = ..2, lmax = ..3, scale = ..4,
+        width = 20))
+    )
+# generate stem geometry and node transformation parameters
+data_stem <- gen_leaf(p_stem, a=p_stem_angle) %>% slice(1:p_node) %>% 
+  mutate(across(x:yend, ~ . * p_scale)) %>% 
+  mutate(
+    n = rev(n),
+    a = seq_alt(n=p_node, m=p_node_angle[1], sd=p_node_angle[2]),
+    a = (a + angle) * pi/180) 
+
+# merge stem and node data
+data_plot <- data_node %>% 
+  left_join(data_stem %>% select(node=n, x0=x, y0=y, a)) %>% 
+  mutate(data_t = pmap(list(data, x0, y0, a), ~ r_t(..1, ..2, ..3, ..4)))
+
+# plot
+p <- ggplot() +
+  geom_shape(
+    data = data_stem %>% transform_path(width = 15),
+    aes(x, y), alpha=0.2, size=1,
+    radius = unit(2.5, 'pt'), expand = unit(2.5, 'pt'), 
+    fill="white", color="darkgrey") +
+  geom_path(data = data_stem, aes(x=x,y=y), color="darkgrey", size = 0.5) +
+  geom_shape(
+    data = data_plot %>% unnest(data_t),
+    aes(x,y, group = interaction(node, id)),
+    color="darkgrey", fill="white", size = 0.5) + 
+  coord_fixed() + theme_void()
+
+
+# export
+file <- "collatz_fern_01"
+
+ggsave(
+  p, file = glue::glue("R/figures/sequence/{file}.png"),
+  width=format$a4[2], height = format$a4[1],
+  dpi=400, scale=1, units="mm")
+
+# cmd <- glue::glue("vpype  read {file}_traced.svg  filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
+```
+
+
+
+

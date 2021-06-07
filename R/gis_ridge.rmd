@@ -17,7 +17,7 @@ Digital Elevation Model (DEM) represents elevation as function of latitude and l
 
 * a coarse and easy source for elevation data ([elevatr](https://github.com/jhollist/elevatr) package), for a broad view (~ 450 km)
 * a precise DEM at a the scale of a specific valley (Ossau, FR, ~ 20 km) using IGN 5m RGE ALTI DEM ([link](https://geoservices.ign.fr/documentation/diffusion/telechargement-donnees-libres.html#rge-alti-5-m)) 
-* a focus on a narrow zone (Loudenvielle, FR, ~ 3 km), with a fine initial sampling resolution for the elevation (30 cm). 
+* a focus on a narrow zone (Loudenvielle, FR, ~ 3 km), with a fine initial sampling resolution for the elevation (30 cm, as reported [here](https://www.geoportail.gouv.fr/carte?c=2.4206324117987448,48.81510668542717&z=10&l0=GEOGRAPHICALGRIDSYSTEMS.MAPS.SCAN-EXPRESS.STANDARD::GEOPORTAIL:OGC:WMTS(1)&l1=ELEVATIONGRIDCOVERAGE.HIGHRES.QUALITY::GEOPORTAIL:OGC:WMTS(1)&permalink=yes)). 
 
 
 ```{r plot_pyrenees, eval=FALSE}
