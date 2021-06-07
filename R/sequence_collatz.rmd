@@ -18,7 +18,7 @@ source("R/sequence_functions.r")
 
 ## Outline
 
-A sequence of integers is generated from a set of rules (here, the Collatz [conjecture](https://en.wikipedia.org/wiki/Collatz_conjecture)). Then, a curve is defined by mapping sequence elements to segment length, with a fixed angle between segments. Multiple curves are computed to constitute a node, and multiple nodes to constitute a stem. The only random elements are initial value for the sequence, and the angle between curve segments. These two examples explore the use of :
+A sequence of integers is generated from a set of rules (here, the Collatz [sequence](https://en.wikipedia.org/wiki/Collatz_conjecture)). Then, a curve is defined by mapping sequence elements to segment length, with a fixed angle between segments. Multiple curves are computed to constitute a node, and multiple nodes to constitute a stem. The only random elements are initial value for the sequence, and the angle between curve segments. These two examples explore the use of :
 
 * generating multiple curves and shifting vertically their starting point by a fixed amount (plot_node_dense)
 * generating multiple node with attributes (number of leaves, scale, angle, position) as a function of a stem-like structure (plot_stem).
