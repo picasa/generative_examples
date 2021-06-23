@@ -1,7 +1,6 @@
 
 # sequence generation ####
 
-
 # https://en.wikipedia.org/wiki/Collatz_conjecture
 # define rules for the Collatz sequence with shortcut for odd numbers
 collatz <- function(n) {
@@ -66,41 +65,26 @@ transform_path <- function(data, scale=1, width=10, shape="polygon") {
         mutate(x = x, y = y + width) %>% 
         summarise(
           x = c(x, rev(xend), x[1]),
-          y = c(y, rev(yend), y[1] - width)) %>% 
-        mutate(across(c(x,y), ~ . * scale)) 
-      
+          y = c(y, rev(yend), y[1] - width))  
     },
     
     path = {
       path <- data %>%
-        mutate(x = x, yend = yend + width)
+        mutate(x = x, yend = yend + width) 
     },
+    
     polygon = {
       path <- data %>%
         mutate(x = x, y = y + width) %>% 
         summarise(
           x = c(x, rev(xend), x[1]),
-          y = c(y, rev(yend), y[1] - width)) %>% 
-        mutate(across(c(x,y), ~ . * scale)) 
+          y = c(y, rev(yend), y[1] - width)) 
     }
   )
   
-  return(path)
+  return(path %>% mutate(across(c(x,y), ~ . * scale)))
   
 }
-
-# functions to translate or rotate shapes
-translate <- function(data, x0, y0) {
-  tr <- linear_trans(translate(x0, y0))
-  tibble(id = data$id, tr$transform(data$x, data$y, x0, y0)) 
-}
-
-rotate <- function(data, a) {
-  tr <- linear_trans(rotate(a))
-  tibble(id = data$id, tr$transform(data$x, data$y, a)) 
-}
-
-r_t <- function(data, x0, y0, a) { data %>% rotate(., a) %>% translate(., x0, y0)}
 
 # objects creation ####
 # generate a single sequence and chain individual vectors as sequence elements

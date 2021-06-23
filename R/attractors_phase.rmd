@@ -7,7 +7,7 @@ library(cowplot)
 plan(multisession)
 
 # functions
-source("R/attractors_functions.r")
+source("R/functions_attractors.r")
 
 # options
 options(dplyr.summarise.inform=FALSE)

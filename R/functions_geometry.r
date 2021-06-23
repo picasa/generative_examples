@@ -1,3 +1,23 @@
+
+# geometry ####
+
+# functions to translate or rotate shapes
+translate <- function(data, x0, y0) {
+  tr <- linear_trans(translate(x0, y0))
+  tibble(id = data$id, tr$transform(data$x, data$y, x0, y0)) 
+}
+
+rotate <- function(data, a) {
+  tr <- linear_trans(rotate(a))
+  tibble(id = data$id, tr$transform(data$x, data$y, a)) 
+}
+
+r_t <- function(data, x0, y0, a) { data %>% rotate(., a) %>% translate(., x0, y0)}
+
+# curves ####
+
+# paper ####
+
 ratio <- list(
   tv = 4/3,
   a = 297/210,

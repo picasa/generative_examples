@@ -14,7 +14,7 @@ options(dplyr.summarise.inform = FALSE)
 update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # functions
-source("R/attractors_functions.r")
+source("R/functions_attractors.r")
 
 ```
 

@@ -7,8 +7,8 @@ library(stars)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
 # functions
-source("R/paper_functions.r")
-source("R/gis_functions.r")
+source("R/functions_geometry.r")
+source("R/functions_gis.r")
 ```
 
 ## Outline
@@ -42,10 +42,15 @@ dem_subset <- dem %>% st_as_stars() %>%
   select(x,y, z = 3) %>% 
   mutate(x = x, y = y, z = z * z_scale)
 
-plot_ridge <- dem_subset %>%
-  render_ridge(
-    n_ridges = 200, n_threshold = 5,
-    z_shift = 1000, z_threshold = 100) 
+data_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 200, z_shift = 1000, z_threshold = 100) %>% 
+  filter_ridge(length_n = 5)
+
+# plot
+plot_ridge <- data_ridge %>%
+  ggplot(aes(xn, zn, group = y_rank)) +
+  geom_line(alpha = 0.6, size = 0.2) +
+  coord_fixed() + theme_void()
 
 ggsave(
   plot_ridge, file = "R/figures/gis/ridge_pyrenee_00.png",
@@ -55,7 +60,6 @@ ggsave(
 ```
 
 ```{r plot_ossau, eval=FALSE}
-
 
 # define location and bounding box
 coord = c(lat=42.9136778, lon=-0.4015139) # Cezy
@@ -69,13 +73,19 @@ point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>%
 
 box <- buffer_rectangle(point, size = 22E3, y_shift = 1E3, orientation="v")
 
+# rotate the DEM matrix to draw ridgelines from north to south
 dem_subset <- dem %>% st_crop(box) %>% 
   as_tibble() %>% mutate(x = -x, y = -y)
 
-plot_ridge <- dem_subset %>%
-  render_ridge(
-    n_ridges = 300, n_drop = 10, n_threshold = 15,
-    z_shift = 10, z_threshold = 8)
+data_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 300, n_drop = 10, z_shift = 10, z_threshold = 8) %>% 
+  filter_ridge(length_n = 15)
+
+# plot
+plot_ridge <- data_ridge %>%
+  ggplot(aes(xn, zn, group = y_rank)) +
+  geom_line(alpha = 0.6, size = 0.2) +
+  coord_fixed() + theme_void()
 
 ggsave(
   plot_ridge, file = "R/figures/gis/ridge_ossau_01.png",
@@ -99,14 +109,20 @@ dem <- coord %>% read_dem(buffer = 5000, dep="65", source = "rge_alti")
 
 box <- buffer_rectangle(point, size = 3E3, orientation="v")
 
+# rotate the DEM matrix to draw ridgelines from north to south
 dem_subset <- dem %>% st_as_stars() %>% 
   st_crop(box) %>% as_tibble() %>%
   select(x0=x, y0=y, z0 = 3) %>% 
   mutate(x = -x0, y = -y0, z = z0 * z_scale) %>% 
   select(x,y,z)
 
-plot_ridge <- dem_subset %>%
-  render_ridge(n_ridges = 300, n_threshold = 0, z_shift = 5, z_threshold = 7) 
+data_ridge <- dem_subset %>% render_ridge(n_ridges = 300, z_shift = 5, z_threshold = 7) 
+
+# plot
+plot_ridge <- data_ridge %>%
+  ggplot(aes(xn, zn, group = y_rank)) +
+  geom_line(alpha = 0.6, size = 0.2) +
+  coord_fixed() + theme_void()
 
 ggsave(
   plot_ridge, file = "R/figures/gis/ridge_loudenvielle_00.png",

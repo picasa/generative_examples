@@ -201,25 +201,27 @@ render_ridge <- function(
   data, 
   n_ridges = 200,     # number of ridges 
   n_drop = 0,         # number of ridges to drop in distance
-  n_threshold = 10,   # length of ridge segments to be filtered (cells)
-  n_lag = 100,        # number of previous ridges used to remove points of current ridge
+  n_lag = 100,        # number of neighbors used to remove points of current ridge
   z_shift = 15,       # distance to shift successive ridges (m)
-  z_threshold = 10,   # distance threshold to remove points between successive ridges (m)
-  alpha = 0.6, size = 0.2,
-  coord = coord_fixed()
+  z_threshold = 10   # distance threshold to remove points between successive ridges (m)
   ){
+  
+  n_ridges <- ifelse(n_ridges == 0, data %>% distinct(y) %>% nrow(), n_ridges)
   
   # keep a fixed number of distinct ridges 
   data_index <- data %>%
     distinct(y) %>% arrange(y) %>% 
     slice(seq(1, n(), len = n_ridges) %>% as.integer()) %>%
-    slice(1:(n() - n_drop)) %>%
-    mutate(y_rank = rank(y)) %>%   
-    mutate(d = 1:n() * z_shift)
+    mutate(
+      y_rank = rank(y),
+      y_dist = scales::rescale(y, to=c(0,1)),
+      d = 1:n() * z_shift
+    )
   
   # compute z shift as a function of ridge index 
   data_shift <- data %>% 
     inner_join(data_index) %>%
+    mutate(xn = x - min(x)) %>% 
     arrange(y) %>% group_by(x) %>% 
     mutate(
       zs = z + d,
@@ -240,22 +242,35 @@ render_ridge <- function(
         TRUE ~ zs)
     ) %>% select(- all_of(list_col))
   
-  # filter ridge elements (cells) shorter than a threshold
-  data_ridge_filter <- data_ridge %>%
-    mutate(zl = cumsum(is.na(zn))) %>%
-    group_by(zl) %>% mutate(zl_n = n()) %>% ungroup() %>% 
-    mutate(zn = if_else(zl_n <= n_threshold, NA_real_, zn))
-  
-  # plot 
-  plot_ridge <- data_ridge_filter %>% 
-    ggplot(aes(x, zn, group = y)) +
-    geom_line(alpha = alpha, size = size) + 
-    coord + theme_void()
-  
-  return(plot_ridge)
+  return(data_ridge)
   
 }
 
+filter_ridge <- function(
+  data,
+  length_n = 10, # length of ridge segments to be filtered (cells)
+  length_x = 5/100, # proportion of ridge length to be filtered (%)
+  dist_y = 0.95 # view distance to be filtered
+  ) {
+  
+  # filter for ridge elements shorter than a threshold (cell number)
+  data_cell <- data %>%
+    mutate(zl = cumsum(is.na(zn))) %>%
+    group_by(zl) %>% mutate(zl_n = n()) %>% ungroup() %>% 
+    mutate(zn = if_else(zl_n <= length_n, NA_real_, zn)) # %>% 
+    # mutate(zn = if_else((zl_n <= 2 & dist_y >= 0.90), NA_real_, zn)) # f(distance)
+  
+  # filter for ridge lines with a low contribution
+  data_line <- data %>%
+    group_by(y_rank, y_dist) %>% 
+    summarise(xp = sum(!is.na(zn)) / n()) %>% 
+    filter(xp < length_x, y_dist > dist_y)
+  
+  data_filter <- data_cell %>% anti_join(data_line)
+  
+  return(data_filter)
+  
+}
 
 
 
