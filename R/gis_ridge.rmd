@@ -168,23 +168,26 @@ data_ridge <- dem_subset %>%
 # plot
 plot_ridge <- data_ridge %>%
   ggplot(aes(xn, zn)) +
-  geom_line(aes(group = y_rank), alpha = 0.6, size = 0.2) +
+  geom_line(aes(group = y_rank), size = 0.2) +
   geom_line(
     data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
-    size = 0.2, alpha = 0.6) +
+    size = 0.2) +
   lims(x=c(0, 2000), y=c(250,1100)) +
   coord_fixed() + theme_void()
 
+file <- "ridge_heric_00"
+
 ggsave(
-  plot_ridge, file = "R/figures/gis/ridge_heric_00.png",
-  dpi=300, width=format$a3[2], height = format$a3[1],
+  plot_ridge, file = glue::glue("R/figures/ode/{file}.png"),
+  dpi=300, width=format$a4[2], height = format$a4[1],
   scale=1, units="mm")
 
 ggsave(
-  plot_ridge, file = "R/figures/gis/svg/ridge_heric_00.svg",
+  plot_ridge, file = glue::glue("R/figures/ode/{file}.svg"),
   width=format$a4[2], height = format$a4[1],
   scale=1, units="mm")
 
+glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
 ```
 
 ```{r plot_arves, eval=FALSE}
@@ -204,7 +207,7 @@ point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>%
 dem <- coord %>% read_dem(buffer = 8000, dep="73", source = "rge_alti")
 
 box <- buffer_rectangle(
-  point, size = 8000, y_shift = -4000, x_shift = 0,
+  point, size = 8000, y_shift = -3500, x_shift = 0,
   orientation="v")
 
 dem_subset <- dem %>% st_as_stars() %>% 
@@ -220,22 +223,25 @@ data_ridge <- dem_subset %>%
 # plot
 plot_ridge <- data_ridge %>%
   ggplot(aes(xn, zn)) +
-  geom_line(aes(group = y_rank), alpha = 0.6, size = 0.2) +
+  geom_line(aes(group = y_rank), size = 0.2) +
   geom_line(
     data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
-    size = 0.2, alpha = 0.6) +
+    size = 0.2) +
   #lims(x=c(0, 6000), y=c(2500, 7000)) +
   coord_fixed() + theme_void()
 
+file <- "ridge_arves_00"
 
 ggsave(
-  plot_ridge, file = "R/figures/gis/ridge_arves_00.png",
+  plot_ridge, file = glue::glue("R/figures/ode/{file}.png"),
   dpi=300, width=format$a3[2], height = format$a3[1],
   scale=1, units="mm")
 
 ggsave(
-  plot_ridge, file = "R/figures/gis/svg/ridge_arves_00.svg",
+  plot_ridge, file = glue::glue("R/figures/ode/{file}.svg"),
   width=format$a3[2], height = format$a3[1],
   scale=1, units="mm")
+
+glue::glue("vpype read {file}.svg linesimplify linesort  write {file}_plot.svg")
 
 ```
