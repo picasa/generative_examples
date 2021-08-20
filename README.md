@@ -40,6 +40,6 @@
 
 [![sequence](R/figures/00_examples/03_sequence_b.png?raw=true "population")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L111)
 
-[![sequence](R/figures/00_examples/03_sequence_b.png?raw=true "stem")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L172)
+[![sequence](R/figures/00_examples/03_sequence_c.png?raw=true "stem")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L172)
 
 
