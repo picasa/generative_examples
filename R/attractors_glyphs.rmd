@@ -179,7 +179,7 @@ data_glyphs <- data_characters %>%
   slice(match(chr_DNA, pattern)) %>% 
   mutate(character = names(chr_DNA))
 
-# get genome sequence
+# get genome sequence (cDNA)
 seq_sars <- read_lines("data/SARS-CoV-2.txt", skip=1)
 
 # select 70x70 last characters

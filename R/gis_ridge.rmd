@@ -13,7 +13,7 @@ source("R/functions_gis.r")
 
 ## Outline
 
-Digital Elevation Model (DEM) represents elevation as function of latitude and longitude. These illustrations are made of multiple lines of elevation as a function of longitude, for discrete latitude values. Overplotting is avoided by checking for a minimal distance between two lines. These three examples explore the use of :
+The main idea is to convert 3D point sets to 2D lines. Digital Elevation Model (DEM) represents elevation as function of latitude and longitude. These illustrations are made of multiple lines of elevation as a function of longitude, for discrete latitude values. Overplotting is avoided (hidden lines) by checking for a minimal distance between two lines. These three examples explore the use of :
 
 * a coarse and easy source for elevation data ([elevatr](https://github.com/jhollist/elevatr) package), for a broad view (~ 450 km)
 * a precise DEM at a the scale of a specific valley (Ossau, FR, ~ 20 km) using IGN 5m RGE ALTI DEM ([link](https://geoservices.ign.fr/documentation/diffusion/telechargement-donnees-libres.html#rge-alti-5-m)) 
@@ -22,6 +22,7 @@ Digital Elevation Model (DEM) represents elevation as function of latitude and l
 
 ```{r plot_pyrenees, eval=FALSE}
 
+# Large scale ridge plot with open-access data
 # define location and bounding box
 coord = c(lat=43.231196, lon = 0) # Tarbes
 z_scale = 2 # ratio of elevation:cell unit
@@ -59,8 +60,10 @@ ggsave(
 
 ```
 
+
 ```{r plot_ossau, eval=FALSE}
 
+# Valley scale, French DEM source (5m, 30m source)
 # define location and bounding box
 coord = c(lat=42.9136778, lon=-0.4015139) # Cezy
 
@@ -93,9 +96,10 @@ ggsave(
 
 ```
 
-```{r plot_loudenvielle}
 
-# Test ridge line rendering with true HR DEM data (5m, 30cm source)
+```{r plot_loudenvielle, eval=FALSE}
+
+# Ridge line rendering with true HR DEM data (5m, 30cm source)
 
 coord = c(lat=42.744617, lon = 0.410614) # Loudenvielle
 z_scale = 1 # ratio of elevation:cell unit
@@ -116,7 +120,8 @@ dem_subset <- dem %>% st_as_stars() %>%
   mutate(x = -x0, y = -y0, z = z0 * z_scale) %>% 
   select(x,y,z)
 
-data_ridge <- dem_subset %>% render_ridge(n_ridges = 300, z_shift = 5, z_threshold = 7) 
+data_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 300, z_shift = 5, z_threshold = 7) 
 
 # plot
 plot_ridge <- data_ridge %>%
@@ -131,3 +136,106 @@ ggsave(
 
 ```
 
+
+```{r plot_heric, eval=FALSE}
+
+# Use full resolution DEM data (1 line / 5 m)
+
+coord = c(lat=43.571297, lon = 2.970772) # Heric
+z_scale = 1 # ratio of elevation:cell unit
+
+# convert DEM to a dataframe and subset based on bounding box
+point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
+  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
+
+# RGE ALTI (5m)
+dem <- coord %>% read_dem(buffer = 5000, dep="34", source = "rge_alti")
+
+box <- buffer_rectangle(
+  point, size = 4000, y_shift = 1000, x_shift = 0,
+  orientation="v")
+
+dem_subset <- dem %>% st_as_stars() %>% 
+  st_crop(box) %>% as_tibble() %>%
+  select(x0=x, y0=y, z0 = 3) %>% 
+  mutate(x = x0, y = y0, z = z0 * z_scale) %>% 
+  select(x,y,z)
+
+data_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 0, n_lag = 500, z_shift = 0, z_threshold = 2) %>% 
+  filter_ridge(length_n = 2, length_x = 2/100, dist_y = 0.90) 
+
+# plot
+plot_ridge <- data_ridge %>%
+  ggplot(aes(xn, zn)) +
+  geom_line(aes(group = y_rank), alpha = 0.6, size = 0.2) +
+  geom_line(
+    data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
+    size = 0.2, alpha = 0.6) +
+  lims(x=c(0, 2000), y=c(250,1100)) +
+  coord_fixed() + theme_void()
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/ridge_heric_00.png",
+  dpi=300, width=format$a3[2], height = format$a3[1],
+  scale=1, units="mm")
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/svg/ridge_heric_00.svg",
+  width=format$a4[2], height = format$a4[1],
+  scale=1, units="mm")
+
+```
+
+```{r plot_arves, eval=FALSE}
+
+# Valley scale, High mean elevation, French DEM source (5m, 1m source)
+
+# define location and bounding box
+coord = c(lat=45.174716, lon = 6.335077) # Aiguilles d'Arves 
+
+z_scale = 1 # ratio of elevation:cell unit
+
+# convert DEM to a dataframe and subset based on bounding box
+point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
+  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
+
+# RGE ALTI (5m)
+dem <- coord %>% read_dem(buffer = 8000, dep="73", source = "rge_alti")
+
+box <- buffer_rectangle(
+  point, size = 8000, y_shift = -4000, x_shift = 0,
+  orientation="v")
+
+dem_subset <- dem %>% st_as_stars() %>% 
+  st_crop(box) %>% as_tibble() %>%
+  select(x0=x, y0=y, z0 = 3) %>% 
+  mutate(x = - x0, y = - y0, z = z0 * z_scale) %>% 
+  select(x,y,z)
+
+data_ridge <- dem_subset %>%
+  render_ridge(n_ridges = 800, n_drop = 1, n_lag = 500, z_shift = 0, z_threshold = 4) %>% 
+  filter_ridge(length_n = 2) 
+
+# plot
+plot_ridge <- data_ridge %>%
+  ggplot(aes(xn, zn)) +
+  geom_line(aes(group = y_rank), alpha = 0.6, size = 0.2) +
+  geom_line(
+    data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
+    size = 0.2, alpha = 0.6) +
+  #lims(x=c(0, 6000), y=c(2500, 7000)) +
+  coord_fixed() + theme_void()
+
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/ridge_arves_00.png",
+  dpi=300, width=format$a3[2], height = format$a3[1],
+  scale=1, units="mm")
+
+ggsave(
+  plot_ridge, file = "R/figures/gis/svg/ridge_arves_00.svg",
+  width=format$a3[2], height = format$a3[1],
+  scale=1, units="mm")
+
+```

@@ -206,12 +206,13 @@ render_ridge <- function(
   z_threshold = 10   # distance threshold to remove points between successive ridges (m)
   ){
   
+  # set n_ridges to max number in data if parameter is 0
   n_ridges <- ifelse(n_ridges == 0, data %>% distinct(y) %>% nrow(), n_ridges)
   
   # keep a fixed number of distinct ridges 
   data_index <- data %>%
     distinct(y) %>% arrange(y) %>% 
-    slice(seq(1, n(), len = n_ridges) %>% as.integer()) %>%
+    slice(seq(1, (n() - n_drop), len = n_ridges) %>% as.integer()) %>%
     mutate(
       y_rank = rank(y),
       y_dist = scales::rescale(y, to=c(0,1)),

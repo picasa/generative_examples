@@ -79,6 +79,14 @@ transform_path <- function(data, scale=1, width=10, shape="polygon") {
         summarise(
           x = c(x, rev(xend), x[1]),
           y = c(y, rev(yend), y[1] - width)) 
+    },
+    
+    polygon_lm = {
+      path <- data %>%
+        mutate(x = x, l = scales::rescale(n, to=c(1,0)), y = y + l*width) %>% 
+        summarise(
+          x = c(x, rev(xend), x[1]),
+          y = c(y, rev(yend), y[1] - width)) 
     }
   )
   
@@ -176,7 +184,7 @@ render_node <- function(
       plot <- data %>% 
         ggplot(aes(x,y, group = id)) +
         geom_shape(
-          color="darkgrey", fill="white",
+          color="black", fill="white",
           size = 0.5, radius = unit(radius, 'pt')) 
     }
   )

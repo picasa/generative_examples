@@ -11,6 +11,7 @@ plan(multisession)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
 # functions
+source("R/functions_sampling.r")
 source("R/functions_geometry.r")
 source("R/functions_sequence.r")
 
@@ -18,10 +19,12 @@ source("R/functions_sequence.r")
 
 ## Outline
 
-A sequence of integers is generated from a set of rules (here, the Collatz [sequence](https://en.wikipedia.org/wiki/Collatz_conjecture)). Then, a curve is defined by mapping sequence elements to segment length, with a fixed angle between segments. Multiple curves are computed to constitute a node, and multiple nodes to constitute a stem. The only random elements are initial value for the sequence, and the angle between curve segments. These two examples explore the use of :
+A sequence of integers is generated from a set of rules (here, the Collatz [sequence](https://en.wikipedia.org/wiki/Collatz_conjecture)). Then, a curve is defined by mapping sequence elements to segment length, with a fixed angle between segments. Multiple curves are computed to constitute a node, and multiple nodes to constitute a stem. The only random elements are initial value for the sequence, and the angle between curve segments. These examples explore the :
 
-* generating multiple curves and shifting vertically their starting point by a fixed amount (plot_node_dense)
-* generating multiple node with attributes (number of leaves, scale, angle, position) as a function of a stem-like structure (plot_stem).
+* generation of a node defined as multiple curves and vertical shifting of their starting point by a fixed amount (plot_node_dense)
+* generation of a few nodes with same attributes and simple geometric deformation.
+* generation of a population of nodes with attributes (scale, shifting) and position as a function of a 2D grid. 
+* generation of multiple node with attributes (number of leaves, scale, angle, position) varying as a function of position on a stem-like structure (plot_stem).
 
 ```{r plot_node_dense, eval=FALSE}
 # plot a single node with dense polygons
@@ -45,14 +48,126 @@ plot_dense <- data_dense %>%
   render_node(radius = 0, margin = 10,
     xlim = c(-100, 100), ylim = c(180,460))
 
+file <- "collatz_dense_05"
+
 ggsave(
-  plot_dense, file = "R/figures/sequence/collatz_dense_05.png",
+  plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[1], height = format$a4[2],
   dpi=300, scale=1, units="mm")
 
+
+glue::glue("vpype  read {file}_traced.svg  linesimplify filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
 ```
 
+```{r plot_mixture, eval=FALSE}
+# plot n nodes with dense polygons
 
+p_node = 4
+p_leaf = 200
+p_imax = 100
+p_lmax = 3000
+p_angle = 20
+p_shift = 4
+p_width = 5
+p_shape = "spline"
+
+# generate n nodes
+set.seed(1)
+
+data_plot <- tibble(node = 1:p_node) %>% 
+  mutate(
+    data = map(node, ~ gen_node(
+      n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
+      shift = p_shift, width = p_width, shape=p_shape))
+    )
+
+plot_dense <- data_plot %>%
+  mutate(
+    x0 = seq(0, by = 250, len=p_node),
+    data_t = map2(data, x0, ~ r_t(..1, a = 0, x0 = ..2, y0 = 0))
+    ) %>% 
+  unnest(data_t) %>% 
+  ggplot() + 
+  geom_shape(
+    aes(x,y, group = interaction(node, id)),
+    color="black", fill="white",
+    size = 0.5) +
+  coord_cartesian(xlim =c(100, 600) , ylim=c(200, 500)) +
+  theme_void() + theme(plot.margin = unit(rep(1,4), "cm"))
+
+
+file <- "collatz_mixture_00"
+   
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
+  width=format$a4[1], height = format$a4[1],
+  dpi=100, scale=1, units="mm")
+
+glue::glue("vpype  read {file}_traced.svg linesimplify  filter --min-length 4mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
+```
+
+```{r plot_population, eval=FALSE}
+# plot a population of n nodes (2D distribution) with attributes varying with depth
+
+p_seed = 2
+p_node = 50
+p_scale = 150
+p_leaf = 10
+p_imax = 50
+p_lmax = 400
+p_angle = 15
+p_width = 8
+p_shape = "spline"
+
+# generate n nodes
+set.seed(p_seed)
+
+# set population parameters
+data_population <- layout_square(n = p_node, method = "sobol", seed=p_seed) %>% 
+  transmute(x0 = x * p_scale, y0 = y * p_scale) %>% arrange(y0) %>% 
+  mutate(
+    node = seq_len(p_node),
+    shift = scales::rescale(y0, to=c(5, 2)),
+    scale = scales::rescale(y0, to=c(1, 0.2))) 
+
+# create nodes as a function of population parameters
+data_node <- data_population %>% 
+  mutate(
+    data = pmap(
+      list(shift, scale),
+      ~ gen_node(
+        n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
+        shift = ..1, scale = ..2, width = p_width, shape = p_shape))
+  )
+
+# change position of nodes in 2D space
+data_plot <- data_node %>%
+  mutate(
+    data_t = pmap(list(data, x0, y0), ~ r_t(..1, x0 = ..2, y0 = ..3, a = 0))
+    ) %>% 
+  select(node, data_t) %>% unnest(data_t)
+
+plot_dense <- data_plot %>% 
+  left_join(data_plot %>% distinct(node, id) %>% mutate(g = 1:n())) %>% 
+  ggplot() + 
+  geom_shape(
+    aes(x,y, group = -g),
+    color="black", fill="white", size = 0.5) +
+  coord_cartesian(xlim =c(-200, 200) , ylim=c(0, 300)) +
+  theme_void() + theme(plot.margin = unit(rep(1,4), "cm"))
+
+file <- "collatz_population_00"
+   
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
+  width=format$a4[1], height = format$a4[1],
+  dpi=300, scale=1, units="mm")
+
+glue::glue("vpype  read {file}_traced.svg  linesimplify  filter --min-length 1.5mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
+```
 
 ```{r plot_stem, eval=FALSE}
 
@@ -101,24 +216,24 @@ p <- ggplot() +
     data = data_stem %>% transform_path(width = 15),
     aes(x, y), alpha=0.2, size=1,
     radius = unit(2.5, 'pt'), expand = unit(2.5, 'pt'), 
-    fill="white", color="darkgrey") +
-  geom_path(data = data_stem, aes(x=x,y=y), color="darkgrey", size = 0.5) +
+    fill="white", color="black") +
+  geom_path(data = data_stem, aes(x=x,y=y), color="black", size = 0.5) +
   geom_shape(
     data = data_plot %>% unnest(data_t),
     aes(x,y, group = interaction(node, id)),
-    color="darkgrey", fill="white", size = 0.5) + 
+    color="black", fill="white", size = 0.5) + 
   coord_fixed() + theme_void()
 
 
 # export
-file <- "collatz_fern_01"
+file <- "collatz_stem_01"
 
 ggsave(
   p, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[2], height = format$a4[1],
   dpi=400, scale=1, units="mm")
 
-# cmd <- glue::glue("vpype  read {file}_traced.svg  filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+glue::glue("vpype  read {file}_traced.svg  filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
 ```
 

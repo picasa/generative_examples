@@ -26,17 +26,20 @@
 
 ### Distinct and shifted lines visualized from data digital elevation model datasets. 
 
-[![ridge](R/figures/00_examples/02_ridge_a.png?raw=true "classic line-removal")](https://github.com/picasa/generative/blob/master/R/gis_ridge.rmd#L57)
+[![ridge](R/figures/00_examples/02_ridge_a.png?raw=true "classic line-removal")](https://github.com/picasa/generative/blob/master/R/gis_ridge.rmd#L64)
 
-[![ridge](R/figures/00_examples/02_ridge_b.png?raw=true "high-resolution terrain")](https://github.com/picasa/generative/blob/master/R/gis_ridge.rmd#L86)
+[![ridge](R/figures/00_examples/02_ridge_b.png?raw=true "high-resolution terrain")](https://github.com/picasa/generative/blob/master/R/gis_ridge.rmd#L100)
 
+[![ridge](R/figures/00_examples/02_ridge_c.png?raw=true "high-resolution terrain")](https://github.com/picasa/generative/blob/master/R/gis_ridge.rmd#L190)
 
 ------------------------------------------------------------------------
 
 ### Curves parameterized from integer sequences and positioned according to basic botanical rules.
 
-[![sequence](R/figures/00_examples/03_sequence_a.png?raw=true "node")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L26)
+[![sequence](R/figures/00_examples/03_sequence_a.png?raw=true "node")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L29)
 
-[![sequence](R/figures/00_examples/03_sequence_b.png?raw=true "stem")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L57)
+[![sequence](R/figures/00_examples/03_sequence_b.png?raw=true "population")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L111)
+
+[![sequence](R/figures/00_examples/03_sequence_b.png?raw=true "stem")](https://github.com/picasa/generative/blob/master/R/sequence_collatz.rmd#L172)
 
 
