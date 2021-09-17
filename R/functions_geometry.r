@@ -14,6 +14,21 @@ rotate <- function(data, a) {
 
 r_t <- function(data, x0, y0, a) { data %>% rotate(., a) %>% translate(., x0, y0)}
 
+
+# spatial ####
+# convert dataframe to sf object, NULL if empty
+as_sf <- function(data) {
+  
+  if (nrow(data) == 0) {return(NULL)}
+  
+  else {
+    data %>%
+      select(one_of(c("id", "x", "y"))) %>%
+      st_as_sf(coords = c("x","y"))
+  }
+}
+
+
 # curves ####
 
 # paper ####

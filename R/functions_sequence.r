@@ -24,21 +24,8 @@ seq_collatz <- function(i, max = 1000) {
 # define functions to generate sequences of angles
 seq_alt <- function(n, m=60, sd=10) {rnorm(n, m, sd)*(-1)^(1:n)}
 
-# sample from a bimodal distribution from two normal distributions
-bimodal <- function(m=c(-60, 60), sd=c(5, 5)) {
-  
-  dist <- distr::UnivarMixingDistribution(
-    distr::Norm(mean = m[1], sd = sd[1]), 
-    distr::Norm(mean = m[2], sd = sd[2]),
-    mixCoeff=c(0.5, 0.5)) 
-  
-  return(dist)
-  
-}
-
 
 # geometry ####
-
 
 # define a recursive function to mutate vectors as a function of sequence parameters
 transform_vector <- function(.x, .y) {
@@ -132,7 +119,7 @@ gen_node <- function(
     v = runif(n, imin, imax) %>% as.integer(),
     a = runif(n, amin, amax)) %>% 
     mutate(
-      path = future_map2(v, a, ~ gen_leaf(v=.x, a=.y)),
+      path = map2(v, a, ~ gen_leaf(v=.x, a=.y)),
       c_n = map_int(path, ~ nrow(.)),
       c_l = map_dbl(path, ~ sum(.$length))
     ) %>% 

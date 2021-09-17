@@ -53,7 +53,7 @@ file <- "collatz_dense_05"
 ggsave(
   plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[1], height = format$a4[2],
-  dpi=300, scale=1, units="mm")
+  dpi=300, scale=1, units="mm", bg = "white")
 
 
 glue::glue("vpype  read {file}_traced.svg  linesimplify filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
@@ -77,7 +77,7 @@ set.seed(1)
 
 data_plot <- tibble(node = 1:p_node) %>% 
   mutate(
-    data = map(node, ~ gen_node(
+    data = future_map(node, ~ gen_node(
       n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
       shift = p_shift, width = p_width, shape=p_shape))
     )
@@ -102,7 +102,7 @@ file <- "collatz_mixture_00"
 ggsave(
   plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[1], height = format$a4[1],
-  dpi=100, scale=1, units="mm")
+  dpi=100, scale=1, units="mm", bg="white")
 
 glue::glue("vpype  read {file}_traced.svg linesimplify  filter --min-length 4mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
@@ -135,7 +135,7 @@ data_population <- layout_square(n = p_node, method = "sobol", seed=p_seed) %>%
 # create nodes as a function of population parameters
 data_node <- data_population %>% 
   mutate(
-    data = pmap(
+    data = future_pmap(
       list(shift, scale),
       ~ gen_node(
         n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
@@ -165,7 +165,16 @@ ggsave(
   width=format$a4[1], height = format$a4[1],
   dpi=300, scale=1, units="mm")
 
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/svg/{file}.svg"),
+  width=format$a4[1], height = format$a4[1],
+  scale=1, units="mm")
+
+# post-process bitmap with a centerline tracing algorithm
 glue::glue("vpype  read {file}_traced.svg  linesimplify  filter --min-length 1.5mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
+# use z-buffer algorithm on svg output
+glue::glue("vpype  read {file}.svg  linesimplify filter --min-length 0.5mm  linemerge --tolerance 0.5mm  linesort occult write {file}_plot_occult.svg ")
 
 ```
 
@@ -191,12 +200,13 @@ data_topology <- tibble(
 # generate nodes as a function of parameter list
 data_node <- data_topology %>% 
   mutate(
-    data = pmap(
+    data = future_pmap(
       list(leaf, angle, lmax, scale),
       ~ gen_node(
         n = ..1, amin = -..2, amax = ..2, lmax = ..3, scale = ..4,
         width = 20))
     )
+
 # generate stem geometry and node transformation parameters
 data_stem <- gen_leaf(p_stem, a=p_stem_angle) %>% slice(1:p_node) %>% 
   mutate(across(x:yend, ~ . * p_scale)) %>% 
@@ -231,9 +241,19 @@ file <- "collatz_stem_01"
 ggsave(
   p, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[2], height = format$a4[1],
-  dpi=400, scale=1, units="mm")
+  dpi=400, scale=1, units="mm", bg = "white")
 
-glue::glue("vpype  read {file}_traced.svg  filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+ggsave(
+  p, file = glue::glue("R/figures/sequence/svg/{file}.svg"),
+  width=format$a4[2], height = format$a4[1],
+  scale=1, units="mm")
+
+# post-process bitmap with a centerline tracing algorithm
+glue::glue("vpype  read {file}_traced.svg  linesimplify filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
+
+# use z-buffer algorithm on svg output
+glue::glue("vpype  read {file}.svg  linesimplify filter --min-length 0.5mm  linemerge --tolerance 0.5mm  linesort occult write {file}_plot_occult.svg ")
+
 
 ```
 
