@@ -50,13 +50,20 @@ data_ridge <- dem_subset %>%
 # plot
 plot_ridge <- data_ridge %>%
   ggplot(aes(xn, zn, group = y_rank)) +
-  geom_line(alpha = 0.6, size = 0.2) +
+  geom_line(alpha = 1, size = 0.2) +
   coord_fixed() + theme_void()
 
+file <- "ridge_pyrenee_00"
+
 ggsave(
-  plot_ridge, file = "R/figures/gis/ridge_pyrenee_00.png",
+  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
   dpi=300, width=format$a3[2], height = format$a3[2]/ratio$uni ,
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
+
+ggsave(
+  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
+  width=format$a3[2], height = format$a3[1],
+  scale=1, units="mm", bg = "white")
 
 ```
 
@@ -87,12 +94,20 @@ data_ridge <- dem_subset %>%
 # plot
 plot_ridge <- data_ridge %>%
   ggplot(aes(xn, zn, group = y_rank)) +
-  geom_line(alpha = 0.6, size = 0.2) +
+  geom_line(alpha = 1, size = 0.2) +
   coord_fixed() + theme_void()
 
+file <- "ridge_ossau_01"
+
 ggsave(
-  plot_ridge, file = "R/figures/gis/ridge_ossau_01.png",
-  dpi=300, width=format$a3[2], height=format$a3[2]/ratio$wide, scale=1, units="mm")
+  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
+  dpi=300, width=format$a3[2], height=format$a3[2]/ratio$wide,
+  scale=1, units="mm", bg="white")
+
+ggsave(
+  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
+  width=format$a3[2], height=format$a3[1],
+  scale=1, units="mm", bg="white")
 
 ```
 
@@ -126,13 +141,20 @@ data_ridge <- dem_subset %>%
 # plot
 plot_ridge <- data_ridge %>%
   ggplot(aes(xn, zn, group = y_rank)) +
-  geom_line(alpha = 0.6, size = 0.2) +
+  geom_line(alpha = 1, size = 0.2) +
   coord_fixed() + theme_void()
 
+file <- "ridge_loudenvielle_00"
+
 ggsave(
-  plot_ridge, file = "R/figures/gis/ridge_loudenvielle_00.png",
-  dpi=300, width=format$a4[1], height = format$a4[2],
-  scale=1, units="mm")
+  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
+  dpi=300, width=format$a4[1], height=format$a4[2],
+  scale=1, units="mm", bg="white")
+
+ggsave(
+  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
+  width=format$a4[1], height=format$a4[2],
+  scale=1, units="mm", bg="white")
 
 ```
 
@@ -178,14 +200,14 @@ plot_ridge <- data_ridge %>%
 file <- "ridge_heric_00"
 
 ggsave(
-  plot_ridge, file = glue::glue("R/figures/ode/{file}.png"),
+  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
   dpi=300, width=format$a4[2], height = format$a4[1],
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
 
 ggsave(
-  plot_ridge, file = glue::glue("R/figures/ode/{file}.svg"),
+  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
   width=format$a4[2], height = format$a4[1],
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
 
 glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
 ```
@@ -233,14 +255,14 @@ plot_ridge <- data_ridge %>%
 file <- "ridge_arves_00"
 
 ggsave(
-  plot_ridge, file = glue::glue("R/figures/ode/{file}.png"),
+  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
   dpi=300, width=format$a3[2], height = format$a3[1],
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
 
 ggsave(
-  plot_ridge, file = glue::glue("R/figures/ode/{file}.svg"),
+  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
   width=format$a3[2], height = format$a3[1],
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
 
 glue::glue("vpype read {file}.svg linesimplify linesort  write {file}_plot.svg")
 

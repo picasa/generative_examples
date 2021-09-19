@@ -5,7 +5,7 @@
 render_graph <- function(
   data, vars = c(x,y),
   graph = "rng", aes = "default", k = 3, 
-  width = 0.5, alpha=0.5, coord=NULL) {
+  color = "black", width = 0.5, alpha=0.5, coord=NULL) {
   
   data <- data %>% select({{vars}}) %>% rename(x = 1, y = 2)  
   
@@ -34,8 +34,8 @@ render_graph <- function(
       
       graph %>%
         ggraph(layout = data) +
-        geom_edge_link(edge_width = width, alpha = alpha) +
-        geom_node_point(size = width * 1.5) +
+        geom_edge_link(edge_width = width, color = color, alpha = alpha) +
+        geom_node_point(size = width * 1.5, color = color) +
         coord + theme_void()
     },
     
@@ -44,9 +44,7 @@ render_graph <- function(
       
       graph %>%
         ggraph(layout = data) +
-        geom_edge_link0(
-          edge_width = width,
-          lineend = "round") +
+        geom_edge_link0(edge_width = width, color = color, lineend = "round") +
         coord + theme_void()
     },
     
@@ -56,8 +54,8 @@ render_graph <- function(
       graph %>%
         ggraph(layout = data) +
         geom_edge_diagonal(
-          edge_width = width, alpha = alpha, strength = 1, n = 100,
-          lineend = "round", linejoin = "round") +
+          edge_width = width, color = color, alpha = alpha,
+          strength = 1, n = 100, lineend = "round", linejoin = "round") +
         coord + theme_void()
     }
   )

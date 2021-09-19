@@ -9,6 +9,8 @@ library(cowplot)
 plan(multisession)
 
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+options(dplyr.summarise.inform = FALSE)
+options(future.rng.onMisuse = "ignore")
 
 # functions
 source("R/functions_sampling.r")
@@ -55,6 +57,10 @@ ggsave(
   width=format$a4[1], height = format$a4[2],
   dpi=300, scale=1, units="mm", bg = "white")
 
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/svg/{file}.svg"),
+  width=format$a4[1], height = format$a4[2],
+  scale=1, units="mm", bg = "white")
 
 glue::glue("vpype  read {file}_traced.svg  linesimplify filter --min-length 1mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
@@ -77,7 +83,7 @@ set.seed(1)
 
 data_plot <- tibble(node = 1:p_node) %>% 
   mutate(
-    data = future_map(node, ~ gen_node(
+    data = map(node, ~ gen_node(
       n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
       shift = p_shift, width = p_width, shape=p_shape))
     )
@@ -103,6 +109,11 @@ ggsave(
   plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[1], height = format$a4[1],
   dpi=100, scale=1, units="mm", bg="white")
+
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/svg/{file}.svg"),
+  width=format$a4[1], height = format$a4[1],
+  scale=1, units="mm", bg="white")
 
 glue::glue("vpype  read {file}_traced.svg linesimplify  filter --min-length 4mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
@@ -163,18 +174,96 @@ file <- "collatz_population_00"
 ggsave(
   plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
   width=format$a4[1], height = format$a4[1],
-  dpi=300, scale=1, units="mm")
+  dpi=300, scale=1, units="mm", bg = "white")
 
 ggsave(
   plot_dense, file = glue::glue("R/figures/sequence/svg/{file}.svg"),
   width=format$a4[1], height = format$a4[1],
-  scale=1, units="mm")
+  scale=1, units="mm", bg = "white")
 
 # post-process bitmap with a centerline tracing algorithm
 glue::glue("vpype  read {file}_traced.svg  linesimplify  filter --min-length 1.5mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
 # use z-buffer algorithm on svg output
 glue::glue("vpype  read {file}.svg  linesimplify filter --min-length 0.5mm  linemerge --tolerance 0.5mm  linesort occult write {file}_plot_occult.svg ")
+
+```
+
+```{r plot_density, eval=FALSE}
+# plot a population of n nodes (2D distribution) with attributes varying with depth and node density
+
+p_seed = 1
+p_node = 100  # number of nodes (individuals)
+p_scale = 200 # scale parameter for individuals
+p_persp = 0.5 # adjust y axis for perspective
+p_leaf = 15   # number of organ for each individual
+p_imax = 50
+p_lmax = 300
+p_angle = 10
+p_width = 10
+p_shape = "polygon_lm"
+
+# generate n nodes
+set.seed(p_seed)
+
+# draw a random layout for nodes
+data_layout <-  layout_square(n = p_node) %>% 
+  transmute(x0 = x * p_scale, y0 = y * p_scale) %>% arrange(y0) 
+
+# count neighbor number in a given radius
+matrix_distance <- data_layout %>%
+  sf::st_as_sf(coords = c("x0", "y0")) %>% sf::st_distance()
+
+# set population parameters : shift = f(density), scale = f(distance)
+data_population <- data_layout %>% 
+  mutate(
+    node = seq_len(p_node),
+    n = apply(matrix_distance, 1, function(x) {sum(x < 50) - 1}),
+    shift = scales::rescale(n, to=c(1, 40)),
+    scale = scales::rescale(y0, to=c(0.6, 0.1))) %>% 
+  mutate(y0 = y0 * scales::rescale(y0, to=c(1, p_persp)))
+
+# data_population %>% ggplot(aes(x0, y0, color = shift)) + geom_point() + coord_fixed()
+
+# create nodes as a function of population parameters
+data_node <- data_population %>% 
+  mutate(
+    data = future_pmap(
+      list(shift, scale),
+      ~ gen_node(
+        n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
+        shift = ..1, scale = ..2, width = p_width, shape = p_shape))
+  )
+
+# set node geometry in 2D space
+data_plot <- data_node %>%
+  mutate(
+    data_t = pmap(list(data, x0, y0), ~ r_t(..1, x0 = ..2, y0 = ..3, a = 0))
+    ) %>% 
+  select(node, data_t) %>% unnest(data_t)
+
+plot_dense <- data_plot %>% 
+  left_join(data_plot %>% distinct(node, id) %>% mutate(g = 1:n())) %>% 
+  ggplot() + 
+  geom_shape(
+    aes(x,y, group = -g),
+    color="black", fill="white", size = 0.3) +
+  coord_cartesian(xlim =c(-150, 150) , ylim=c(-100, 150)) +
+  theme_void() + theme(plot.margin = unit(rep(1,4), "cm"))
+
+file <- "collatz_density_00"
+   
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/{file}.png"),
+  width=format$a4[1], height = format$a4[1],
+  dpi=300, scale=1, units="mm", bg = "white")
+
+ggsave(
+  plot_dense, file = glue::glue("R/figures/sequence/svg/{file}.png"),
+  width=format$a4[1], height = format$a4[1],
+  scale=1, units="mm", bg = "white")
+
+glue::glue("vpype  read {file}_traced.svg  linesimplify  filter --min-length 4mm  linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg ")
 
 ```
 
