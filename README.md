@@ -1,5 +1,8 @@
 # Exploration of generative art with \#rstats
 
+The full versions of the digital outputs are hosted in my art [website](https://casadebaig.netlify.app).
+The code in this repository is released under a [BSD](https://github.com/picasa/generative/blob/master/LICENSE.md) licence.  
+
 ![README](R/figures/00_examples/readme.png?raw=true "README")
 
 ------------------------------------------------------------------------
@@ -30,4 +33,3 @@
 
 ------------------------------------------------------------------------
 
-The code in this repository is released under a [BSD](https://github.com/picasa/generative/blob/master/LICENSE.md) licence
