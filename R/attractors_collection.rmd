@@ -18,11 +18,8 @@ options(dplyr.summarise.inform=FALSE)
 update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # functions
+source("R/functions_geometry.r")
 source("R/functions_attractors.r")
-
-# parameters
-size_a1 <- c(841, 594)
-size_a2 <- c(594, 420)
 
 ```
 
@@ -92,7 +89,7 @@ data_collection <- data_collection %>%
   mutate(plot = map(xy, ~ render_plot(., size = 0.1))) %>% 
   arrange(name)
 
-# build plot
+# build plot collection
 plot_collection <- plot_grid(
   plotlist = data_collection$plot, ncol = 8, scale = 0.7,
   labels = str_to_title(data_collection$name),
@@ -104,7 +101,55 @@ plot_collection <- plot_grid(
 ggsave(
   plot_collection,
   file = "./R/figures/attractors/set_collection_03.png",
-  dpi=300, width=size_a2[2], height=size_a2[1], scale=1, units="mm")
+  dpi=300, width=format$a2[1], height=format$a2[2], scale=1, units="mm")
+
+# select and save n outputs
+ggsave(
+  data_collection$plot[[1]] + geom_point(alpha= 1/3), 
+  file = "./R/figures/attractors/attractor_test.png",
+  dpi=300, width=format$a4[1], height=format$a4[1], scale=1, units="mm")
+
+```
+
+```{r plot_single, eval=FALSE}
+
+n_plot = 4 # number of parameter combination to be simulated
+
+# load results from previously intensive sampling
+table_set <- read_rds("data/attractor_parameter_set_discrete.rds")
+
+# filter functions (aesthetic:sampled ~ 0.1 %)
+table_collection <- table_set %>%
+  filter(between(L, 0.1, 0.4)) %>% 
+  filter(d > 0.30) %>% 
+  filter(cv < 1.1) %>% 
+  filter(abs(r) < 0.8)
+
+# compute quadratic map at high resolution for a random subset of functions
+# post-process xy data (filter early iterations, rescaling)
+# filter rare functions that diverge/converge for large iterations
+set.seed(2)
+
+data_collection <- table_collection %>%
+  slice_sample(n = n_plot) %>% 
+  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1e6))) %>% 
+  filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
+  filter(map_lgl(xy, ~ density_metric(.) %>% pull(cv) < 2)) %>% 
+  mutate(xy = map(xy, ~ normalize_xy(.)))
+
+# compute plots for selected functions
+data_collection <- data_collection %>%
+  mutate(
+    plot = map(xy, ~ render_plot(., size = 0.1, alpha = 1/3)),
+    file = glue::glue("./R/figures/attractors/collection/attractor_{name}.png")
+    ) %>% 
+  mutate(
+    s = walk2(file, plot, ~ ggsave(
+      filename = .x, dpi=300, scale=1,
+      plot = .y + geom_point(alpha= 1/3),
+      width=format$a4[1], height=format$a4[1], units="mm"
+      ))
+  )
 
 # save_plot()
 # index <- data_collection %>% select(-p, -xy, -plot)
@@ -112,7 +157,6 @@ ggsave(
 # index_new <- data_collection %>% 
 #   mutate(density = map(xy, ~ density_metric(., gridsize = 50))) %>% 
 #   select(-(L:r), -(p:plot)) %>% unnest(density)
-
 
 ```
 
