@@ -3,16 +3,20 @@
 ```{r setup}
 library(tidyverse)
 library(ggforce)
-library(ggraph)
+library(furrr)
 library(tidygraph)
 library(cowplot)
 
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
 # function
+source("R/functions_sampling.r")
+source("R/functions_geometry.r")
 source("R/functions_splines.r")
 
 # parameters
+plan(multisession)
+options(future.rng.onMisuse = "ignore")
 
 # define coordinates systems for plots
 coord_square <- coord_fixed(
@@ -23,6 +27,15 @@ coord_ellipse <- coord_fixed(
   ratio = 1, expand = TRUE,
   xlim = c(-0.7, 0.7), ylim = c(-0.9, 0.9))   
 ```
+
+```{r functions}
+
+sample_letters <- function(n = 3) {
+  sample(letters, n, replace = TRUE) %>% paste0(collapse = "") 
+}
+
+```
+
 
 ## Outline
 
@@ -62,9 +75,12 @@ ggsave(
 # map glyphs to letters and generate text as glyphs sequences
 # alterate individual glyphs with random variations
 
-set.seed(1)
+p_seed = 5
+set.seed(p_seed)
+
 n_points = 6    # number of control points per character
 n_col = 60      # number of characters per line (default 70)
+p_jitter = 1/5
 
 # define a character map 
 data_map <- tibble(
@@ -82,19 +98,23 @@ data_glyphs <- data_map %>%
     layout_rng = map(
       layout,
       ~ unnest(.x, cols = c(x,y)) %>%
-        mutate(across(x:y, jitter, amount=1/5))),
+        mutate(across(x:y, jitter, amount = p_jitter))),
     plot = map(layout_rng, render_spline, width=0.3, coord=coord_ellipse),
     plot_bold = map(layout_rng, render_spline, width=0.5, coord=coord_ellipse)
   )
 
 # generate a nonsense text
-set.seed(10)
+p_seed_2 = 10
+set.seed(p_seed_2)
+
 seq_text <- stringi::stri_rand_lipsum(n_paragraphs = 2)
 seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
 
 # render each paragraph using a random variation for each character
 data_script <- tibble(text = seq_text) %>% 
-  mutate(plot = map(text, ~ render_script(., data=data_glyphs, ncol=n_col, scale=1.8)))
+  mutate(plot = future_map(
+    text,
+    ~ render_script(., data=data_glyphs, ncol=n_col, scale=1.8)))
 
 # export text
 plot_script <- plot_grid(
@@ -102,35 +122,41 @@ plot_script <- plot_grid(
   ncol=1, rel_heights=c(seq_prop)) +
   theme(plot.margin = unit(c(2,2,2,2), "cm"))
 
+file <- glue::glue("text_0_script_", sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
+
 ggsave(
   plot_script,
-  file="./R/figures/splines/text_script_00.png",
-  dpi=300, width=210, height=210, scale=1, units="mm") 
+  file=glue::glue("R/figures/splines/{file}.png"),
+  dpi=300, width=210, height=210, scale=1, units="mm", bg="white") 
+
+# ggsave(
+#   plot_script,
+#   file=glue::glue("R/figures/splines/svg/{file}.svg"),
+#   width=210, height=210, scale=1, units="mm") 
+# 
+# glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
 
 # export map
-plot_glyphs <- plot_grid(
-  plotlist = data_glyphs[1:100,]$plot_bold, ncol=10, scale=0.8) +
-  theme(plot.margin = unit(c(1,1,1,1), "cm"))
-
-ggsave(
-  plot_glyphs,
-  file="./R/figures/splines/set_glyphs_variability.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
+# plot_glyphs <- plot_grid(
+#   plotlist = data_glyphs[1:100,]$plot_bold, ncol=10, scale=0.8) +
+#   theme(plot.margin = unit(c(1,1,1,1), "cm"))
+# 
+# ggsave(
+#   plot_glyphs,
+#   file="./R/figures/splines/set_glyphs_variability.png",
+#   dpi=300, width=210, height=210, scale=1, units="mm")
 
 ```
 
 ```{r plot_script_merge, eval=FALSE}
 # generate more complex shapes by concatenating n individual layouts
-
-sample_letters <- function(n = 3) {
-  sample(letters, n, replace = TRUE) %>% paste0(collapse = "") 
-}
-
-set.seed(1)
+p_seed = 13
+set.seed(p_seed)
 
 n_letters = 26  # number of letters in alphabet
 n_tall = 4      # number of tall letters
 size_tall = 8   # size of tall letters (units)
+scale_chr = 1   # scale of character
 n_points = 4    # number of control points per character
 n_chr = 3       # number of elements to be concatenated as new glyphs
 n_col = 40      # number of characters per line (default 70)
@@ -142,34 +168,112 @@ data_map <- gen_charmap(n_letters, n_points, n_tall, size_tall)
 data_glyphs <- data_map %>% 
   mutate(
     variation = 1,
-    word = rerun(29, sample_letters(n = n_chr)),
+    word = rerun(n(), sample_letters(n = n_chr)),
     layout_word = map(word, ~ layout_word(., data_map)),
     plot = map(layout_word, ~ render_spline(., n = 300, coord = coord_fixed()))
     )
 
 # generate a nonsense text
-set.seed(10)
-seq_text <- stringi::stri_rand_lipsum(n_paragraphs = n_length)
-seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
+p_seed_2 = 10
+set.seed(p_seed_2)
 
-# render each paragraph concatenated glyphs
+seq_text <- stringi::stri_rand_lipsum(n_paragraphs = n_length)
+seq_length <- sum(str_length(seq_text))
+seq_prop <- str_length(seq_text) / seq_length
+
+# render each paragraph of concatenated glyphs
 data_script <- tibble(text = seq_text) %>% 
-  mutate(plot = map(text, ~ render_script(., data=data_glyphs, ncol=n_col, scale=1)))
+  mutate(plot = future_map(
+    text, ~ render_script(., data=data_glyphs, ncol=n_col, scale=scale_chr)))
 
 # export text
 plot_script <- plot_grid(
   plotlist = data_script$plot,
-  ncol=1, rel_heights=c(seq_prop)) +
+  ncol=1, rel_heights=c(seq_prop), scale = 1) +
   theme(plot.margin = unit(c(2,2,3,2), "cm"))
 
+# plot character map
+# plot_glyph <- plot_grid(plotlist = data_glyphs$plot, scale = 0.8)
 
-# plot_glyph <- plot_grid(plotlist = data_glyphs$plot, scale = 0.9)
+file <- glue::glue("text_3_merge_", sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
 
 ggsave(
   plot_script,
-  file="./R/figures/splines/text_script_01.png",
-  dpi=300, width=210, height=210, scale=1, units="mm") 
+  file=glue::glue("R/figures/splines/{file}.png"),
+  dpi=300, width=210, height=210, scale=1, units="mm", bg="white") 
 
+ggsave(
+  plot_script,
+  file=glue::glue("R/figures/splines/svg/{file}.svg"),
+  width=210, height=210, scale=1, units="mm") 
+
+glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
+```
+
+```{r plot_vertical, eval=FALSE}
+# partially superpose glyphs in vertical design
+p_seed = 16
+set.seed(p_seed)
+
+n_letters = 26  # number of letters in alphabet
+n_tall = 4      # number of tall letters
+size_tall = 8   # size of tall letters (units)
+scale_chr = 1.3 # scale of character
+n_points = 4    # number of control points per character
+n_chr = 3       # number of elements to be concatenated as new glyphs
+n_col = 30      # number of characters per line (default 70)
+n_length = 2    # total length of text (number of sentence)
+
+# define a character map 
+data_map <- gen_charmap(n = n_letters, n_control = n_points, n_tall, size_tall)
+
+# define new characters by drawing a random combination of 3 elements.
+data_glyphs <- data_map %>% 
+  mutate(
+    variation = 1,
+    word = map_chr(character, ~ sample_letters(n = n_chr)),
+    layout_word = map(word, ~ layout_word(., data_map)),
+    plot = map(layout_word, ~ render_spline(., n = 300, o = "v", c = coord_fixed()))
+    )
+
+# plot character map
+# plot_glyph <- plot_grid(plotlist = data_glyphs$plot, scale = 0.8)
+
+# generate a nonsense text
+p_seed_2 = 10
+set.seed(p_seed_2)
+
+seq_text <- stringi::stri_rand_lipsum(n_paragraphs = 1) %>%
+  word(1:n_length, sep = fixed(". "))
+
+seq_length <- sum(str_length(seq_text))
+seq_prop <- str_length(seq_text) / seq_length
+
+# render each paragraph of concatenated glyphs
+data_script <- tibble(text = seq_text) %>%
+  mutate(plot = future_map(
+    text, ~ render_script(
+      ., data = data_glyphs, ncol = n_col, scale = scale_chr, o = "v")))
+
+# export text
+plot <- plot_grid(
+  plotlist = data_script$plot,
+  nrow = 1, rel_widths = c(seq_prop), scale = 1) +
+  theme(plot.margin = unit(c(1,1,1,1), "cm"))
+
+file <- glue::glue("text_vertical_", sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
+
+ggsave(
+  plot,
+  file = glue::glue("R/figures/splines/{file}.png"),
+  dpi = 300, width = 85, height = format$a4[1], scale = 1, units = "mm", bg = "white") 
+
+# ggsave(
+#   plot_script,
+#   file=glue::glue("R/figures/splines/svg/{file}.svg"),
+#   width=format$a4[1], height=85, scale=1, units="mm")
+
+glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
 ```
 
 
@@ -177,7 +281,8 @@ ggsave(
 # generate words by concatenating individual graphs layouts
 
 # parameters
-set.seed(1)
+p_seed = 7
+set.seed(p_seed)
 
 n_letters = 26  # number of letters in alphabet
 n_tall = 5      # number of tall letters
@@ -190,13 +295,15 @@ n_length = 3    # total length of text (number of paragraph)
 data_glyphs <- gen_charmap(n_letters, n_points, n_tall, size_tall)
 
 # generate a nonsense text
-set.seed(10)
+p_seed_2 = 10
+set.seed(p_seed_2)
+
 seq_text <- stringi::stri_rand_lipsum(n_paragraphs = n_length)
 
 # generate words from sequences of random length
 data_cursive <- tibble(text = seq_text) %>% 
   mutate(line = round(str_replace_all(text, " ", "") %>% str_length() / n_col)) %>% 
-  mutate(plot = map(
+  mutate(plot = future_map(
     text,
     ~ render_cursive(., data = data_glyphs, ncol = n_col, scale = 0.8)))
 
@@ -206,18 +313,21 @@ plot_cursive <- plot_grid(
   ncol=1, rel_heights = data_cursive$line) +
   theme(plot.margin = unit(c(2,1,3,0), "cm"))
 
+file <- glue::glue("text_n_cursive_", sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
+
 ggsave(
   plot_cursive,
-  file="./R/figures/splines/text_cursive_00.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
+  file=glue::glue("R/figures/splines/{file}.png"),
+  dpi=300, width=210, height=210, scale=1, units="mm", bg="white")
 
 ```
 
 ```{r plot_cursive_large, eval=FALSE}
-# generate longer and larger words with more detailed and complex shapes
+# generate longer and larger words
 
 # parameters
-set.seed(1)
+p_seed = 6
+set.seed(p_seed)
 
 n_letters = 26  # number of letters in alphabet
 n_tall = 5      # number of tall letters
@@ -230,7 +340,8 @@ n_length = 1    # total length of text (number of paragraph)
 data_glyphs <- gen_charmap(n_letters, n_points, n_tall, size_tall)
 
 # generate a nonsense text
-set.seed(10)
+p_seed_2 = 10
+set.seed(p_seed_2)
 seq_text <- stringi::stri_rand_lipsum(n_paragraphs = n_length)
 
 # generate words from sequences of random length
@@ -246,32 +357,38 @@ plot_cursive <- plot_grid(
   ncol=1, rel_heights = data_cursive$line) +
   theme(plot.margin = unit(c(2,1,4,1), "cm"))
 
+file <- glue::glue(
+  "text_n_cursive_l_",
+  sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
+
 ggsave(
   plot_cursive,
-  file="./R/figures/splines/text_cursive_01.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
+  file=glue::glue("R/figures/splines/{file}.png"),
+  dpi=300, width=210, height=210, scale=1, units="mm", bg="white")
 
 ```
 
-```{r plot_cursive_long, eval=FALSE}
+```{r plot_cursive_complex, eval=FALSE}
 # generate longer and larger words with more detailed and complex shapes
 
 # parameters
-set.seed(8)
+p_seed = 16
+set.seed(p_seed)
 
 n_letters = 26   # number of letters in alphabet
 n_tall = 5       # number of tall letters
-size_tall = 20    # size of tall letters (units)
+size_tall = 20   # size of tall letters (units)
 n_points = 5     # number of control points per character
-size_seq = 10:20 # number of letters in generated words
-n_words = 8     # number of generated words
+size_seq = 10:15 # number of letters in generated words
+n_words = 8      # number of generated words
 n_col = 40       # number of characters per line
 
 # define a character map and randomly modify few characters in y scaling
 data_glyphs <- gen_charmap(n_letters, n_points, n_tall, size_tall)
 
 # generate a fixed number of words with various length
-set.seed(2)
+p_seed_2 = 2
+set.seed(p_seed_2)
 
 seq_text <- stringi::stri_rand_strings(
   n = n_words, pattern = "[a-z]",
@@ -282,18 +399,23 @@ data_cursive <- tibble(text = seq_text) %>%
   mutate(line = round(str_replace_all(text, " ", "") %>% str_length() / n_col)) %>% 
   mutate(plot = map(
     text,
-    ~ render_cursive(., data = data_glyphs, ncol = n_col, n_points = 500, scale = 1)))
+    ~ render_cursive(
+      ., data = data_glyphs, ncol = n_col, n_points = 500, scale = 1)))
 
 # plot word
 plot_cursive <- plot_grid(
   plotlist = data_cursive$plot,
-  ncol=1, rel_heights = data_cursive$line) +
-  theme(plot.margin = unit(c(5,1,5,1), "cm"))
+  ncol=1, rel_heights = data_cursive$line, scale = 0.8, axis = "l") +
+  theme(plot.margin = unit(c(0,3,0,0), "cm"))
+
+file <- glue::glue(
+  "word_n_complex_",
+  sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
 
 ggsave(
   plot_cursive,
-  file="./R/figures/splines/text_cursive_02.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
+  file=glue::glue("R/figures/splines/{file}.png"),
+  dpi=300, width=210, height=210, scale=1, units="mm", bg="white")
 
 ```
 
