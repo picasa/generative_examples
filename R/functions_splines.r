@@ -11,7 +11,9 @@ layout_word <- function(word, data, shift = 1) {
 
 
 # define a character map and randomly modify few characters in y scaling
-gen_charmap <- function(n = 26, n_control = 4, n_tall = 4, size_tall = 4, ...) {
+gen_charmap <- function(
+  n = 26, n_control = 4, n_tall = 4, size_tall = 4,
+  scale = 0.5, rotation = -pi/6) {
   
   data_map <- tibble(
     pattern = 1:(n + 3),
@@ -20,7 +22,8 @@ gen_charmap <- function(n = 26, n_control = 4, n_tall = 4, size_tall = 4, ...) {
       rbinom((n + 3), 1, p = n_tall/(n + 3)) == 0 ~ 1,
       TRUE ~ size_tall)
     ) %>% 
-    mutate(layout = map(r, ~ layout_ellipse(n = n_control, r = .)))
+    mutate(layout = map(
+      r, ~ layout_ellipse(n = n_control, r = ., scale_x = scale, a = rotation)))
   
   return(data_map)
   
@@ -56,8 +59,9 @@ render_spline <- function(
 
 # render a paragraph from an existing text and a set of plots using script style
 render_script <- function(
-  text, data, ncol = 80, scale = 0.9,
+  text, data, length = 80, scale = 0.9,
   orientation = "h", align = "none") {
+  
   # split text to characters
   seq <- text %>% str_to_lower() %>% str_split(., "") 
   
@@ -75,12 +79,13 @@ render_script <- function(
     
     h = {
       plot_grid(
-        plotlist = glyph$plot, ncol = ncol, scale = scale, align = align)
+        plotlist = glyph$plot, ncol = length,
+        scale = scale, align = align)
       },
     
     v = {
       plot_grid(
-        plotlist = glyph$plot, nrow = n_col,
+        plotlist = glyph$plot, nrow = length,
         scale = scale, align = align, byrow = FALSE)
       }
   )
