@@ -7,8 +7,8 @@ library(stars)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
 # functions
-source("R/functions_geometry.r")
-source("R/functions_gis.r")
+# remotes::install_github("picasa/generate")
+library(generate)
 ```
 
 ## Outline
@@ -57,13 +57,8 @@ file <- "ridge_pyrenee_00"
 
 ggsave(
   plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
-  dpi=300, width=format$a3[2], height = format$a3[2]/ratio$uni ,
-  scale=1, units="mm", bg = "white")
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
-  width=format$a3[2], height = format$a3[1],
-  scale=1, units="mm", bg = "white")
+  dpi = 300, width = 420, height = 297,
+  scale = 1, units = "mm", bg = "white")
 
 ```
 
@@ -102,11 +97,6 @@ file <- "ridge_ossau_01"
 ggsave(
   plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
   dpi=300, width=format$a3[2], height=format$a3[2]/ratio$wide,
-  scale=1, units="mm", bg="white")
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
-  width=format$a3[2], height=format$a3[1],
   scale=1, units="mm", bg="white")
 
 ```
@@ -151,119 +141,5 @@ ggsave(
   dpi=300, width=format$a4[1], height=format$a4[2],
   scale=1, units="mm", bg="white")
 
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
-  width=format$a4[1], height=format$a4[2],
-  scale=1, units="mm", bg="white")
-
 ```
 
-
-```{r plot_heric, eval=FALSE}
-
-# Use full resolution DEM data (1 line / 5 m)
-
-coord = c(lat=43.571297, lon = 2.970772) # Heric
-z_scale = 1 # ratio of elevation:cell unit
-
-# convert DEM to a dataframe and subset based on bounding box
-point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
-  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
-
-# RGE ALTI (5m)
-dem <- coord %>% read_dem(buffer = 5000, dep="34", source = "rge_alti")
-
-box <- buffer_rectangle(
-  point, size = 4000, y_shift = 1000, x_shift = 0,
-  orientation="v")
-
-dem_subset <- dem %>% st_as_stars() %>% 
-  st_crop(box) %>% as_tibble() %>%
-  select(x0=x, y0=y, z0 = 3) %>% 
-  mutate(x = x0, y = y0, z = z0 * z_scale) %>% 
-  select(x,y,z)
-
-data_ridge <- dem_subset %>%
-  render_ridge(n_ridges = 0, n_lag = 500, z_shift = 0, z_threshold = 2) %>% 
-  filter_ridge(length_n = 2, length_x = 2/100, dist_y = 0.90) 
-
-# plot
-plot_ridge <- data_ridge %>%
-  ggplot(aes(xn, zn)) +
-  geom_line(aes(group = y_rank), size = 0.2) +
-  geom_line(
-    data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
-    size = 0.2) +
-  lims(x=c(0, 2000), y=c(250,1100)) +
-  coord_fixed() + theme_void()
-
-file <- "ridge_heric_00"
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
-  dpi=300, width=format$a4[2], height = format$a4[1],
-  scale=1, units="mm", bg = "white")
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
-  width=format$a4[2], height = format$a4[1],
-  scale=1, units="mm", bg = "white")
-
-glue::glue("vpype read {file}.svg linesimplify linemerge --tolerance 0.5mm  linesort  write {file}_plot.svg")
-```
-
-```{r plot_arves, eval=FALSE}
-
-# Valley scale, High mean elevation, French DEM source (5m, 1m source)
-
-# define location and bounding box
-coord = c(lat=45.174716, lon = 6.335077) # Aiguilles d'Arves 
-
-z_scale = 1 # ratio of elevation:cell unit
-
-# convert DEM to a dataframe and subset based on bounding box
-point <- data.frame(lon = coord["lon"], lat = coord["lat"]) %>% 
-  st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326) %>% st_transform(crs = 2154) 
-
-# RGE ALTI (5m)
-dem <- coord %>% read_dem(buffer = 8000, dep="73", source = "rge_alti")
-
-box <- buffer_rectangle(
-  point, size = 8000, y_shift = -3500, x_shift = 0,
-  orientation="v")
-
-dem_subset <- dem %>% st_as_stars() %>% 
-  st_crop(box) %>% as_tibble() %>%
-  select(x0=x, y0=y, z0 = 3) %>% 
-  mutate(x = - x0, y = - y0, z = z0 * z_scale) %>% 
-  select(x,y,z)
-
-data_ridge <- dem_subset %>%
-  render_ridge(n_ridges = 800, n_drop = 1, n_lag = 500, z_shift = 0, z_threshold = 4) %>% 
-  filter_ridge(length_n = 2) 
-
-# plot
-plot_ridge <- data_ridge %>%
-  ggplot(aes(xn, zn)) +
-  geom_line(aes(group = y_rank), size = 0.2) +
-  geom_line(
-    data = data_ridge %>% group_by(xn) %>% slice_max(zn, n=1),
-    size = 0.2) +
-  #lims(x=c(0, 6000), y=c(2500, 7000)) +
-  coord_fixed() + theme_void()
-
-file <- "ridge_arves_00"
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/{file}.png"),
-  dpi=300, width=format$a3[2], height = format$a3[1],
-  scale=1, units="mm", bg = "white")
-
-ggsave(
-  plot_ridge, file = glue::glue("R/figures/gis/svg/{file}.svg"),
-  width=format$a3[2], height = format$a3[1],
-  scale=1, units="mm", bg = "white")
-
-glue::glue("vpype read {file}.svg linesimplify linesort  write {file}_plot.svg")
-
-```

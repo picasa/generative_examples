@@ -12,67 +12,11 @@ plan(multisession)
 # options
 options(dplyr.summarise.inform = FALSE)
 update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
+options(future.rng.onMisuse = "ignore")
 
 # functions
-source("R/functions_attractors.r")
-
-```
-
-
-```{r sample, eval=FALSE}
-set.seed(1)
-
-n_total <- 5e5
-
-# sample parameter space and discard convergent functions 
-table_set <- tibble(pattern = 1:n_total) %>%
-  mutate(p = map(pattern, ~ round(runif(12, -1.5, 1.5), 2))) %>%
-  mutate(L = future_map_dbl(p, ~ L(quadratic_map, ., 0, 0, iterations = 1000))) %>%
-  filter(L > 0)
-
-# compute xy data and point density as an aesthetic metric. (28 / 1000 @ 5000)
-# filter diverging functions 
-table_set <- table_set %>%
-  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 2000))) %>% 
-  filter(map_lgl(xy, function(d) with(d, all(abs(x) + abs(y) < 1e7)))) %>%
-  mutate(density = map(xy, density_metric, gridsize = 50)) %>% 
-  mutate(r = map_dbl(xy, ~ with(., cor(x,y)))) %>% 
-  select(-xy) %>% unnest(density) %>% arrange(pattern)
-
-# export
-saveRDS(table_set, file="data/attractor_parameter_set.rds", compress="gzip")
-
-```
-
-
-```{r select, eval=FALSE}
-table_set <- read_rds("data/attractor_parameter_set.rds")
-
-# manually select interesting glyphs on this list
-list_selected <- c(
-  31, 75, 737, 1556, 2051, 2128, 2669, 2691, 3292, 3603,
-  3723, 3788, 4016, 4449, 5797, 13767, 14315, 14603, 15157, 16089, #11813
-  16638, 20341, 21548, 21847, 21895, 23384, 24190, 24586, 24939, 24943,
-  25319, 25384, 25546, 25990, 25998, 26367, 27606, 29238, 30093, 30647,
-  31870, 33263, 33905, 37160, 37461, 37513, 37657, 39385, 39768, 43188, 
-  43796, 44876, 45284, 45485, 46358, 46507, 48313, 48534, 48733, 49585,
-  50331, 50971, 52304, 52976, 53006, 53892, 54577, 54623, 54877, 56037,
-  56088, 56117, 56221, 57732, 57737, 59505, 60556, 61081, 61123, 61241,
-  61300, 62111, 62750, 62809, 62857, 64655, 66345, 66370, 66559, 67017,
-  67491, 68132, 68687, 69870, 70816, 71408, 71602, 71911, 72473, 74345,
-  74352, 74423, 74546, 74715, 74853, 76368, 77530, 77967, 78869, 79121,
-  81122, 82427, 82456, 83275, 83833, 83982, 84713, 85638, 85696, 87787,
-  91006, 91040, 91666, 92888, 93357, 94699, 95214, 96825, 98361, 99661
-)
-
-# generate a low resolution plot of characters to export
-data_characters <- table_set %>%
-  filter(pattern %in% list_selected) %>% 
-  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = 1000))) %>% 
-  mutate(xy = map(xy, ~ normalize_xy(.))) %>% 
-  mutate(plot = map(xy, ~ render_plot(., size = 0.5, alpha = 0.2)))
-
-write_rds(data_characters, "data/attractor_set_text.rds", compress="gz")
+# remotes::install_github("picasa/generate")
+library(generate)
 
 ```
 
@@ -100,24 +44,29 @@ ggsave(
 data_characters <- read_rds("data/attractor_set_text.rds")
 
 # sample different glyphs in different sequence length to emulate text
-set.seed(1)
+p_seed = 1
+set.seed(p_seed)
 
 data_text <- tibble(character=sample(20:60, size=9, replace = TRUE)) %>% 
-  mutate(sequence = map(character, render_sequence, data=data_characters$plot, length=60))
+  mutate(sequence = future_map(
+    character, ~ render_sequence(., data=data_characters$plot, length=60)))
 
 plot_text <- plot_grid(plotlist = data_text$sequence, ncol = nrow(data_text)) 
 
+file <- glue::glue("text_sequences_", sprintf("%02d", p_seed))
+
 ggsave(
   plot_text,
-  file="./R/figures/attractors/text_sequences.png",
-  dpi=300, width=210, height=295, scale=1, units="mm")
+  file=glue::glue("R/figures/attractors/{file}.png"),
+  dpi=300, width=210, height=295, scale=1, units="mm", bg="white")
 
 ```
 
 ```{r plot_lipsum, eval=FALSE}
 # map glyphs to letters and use generated text to create glyphs sequence
 
-set.seed(1)
+p_seed = 1
+set.seed(p_seed)
 
 # lower resolution from pre-generated glyphs 
 data_characters <- read_rds("data/attractor_set_text.rds") %>% 
@@ -137,15 +86,19 @@ data_glyphs <- data_characters %>%
   mutate(character = c(letters[1:26], ".", ","))
 
 # generate a nonsense text
-set.seed(10)
+p_seed_2 = 10
+set.seed(p_seed_2)
+
 seq_text <- stringi::stri_rand_lipsum(n_paragraphs = 3)
 seq_prop <- str_length(seq_text)/sum(str_length(seq_text))
 
 data_text <- tibble(text = seq_text) %>% 
-  mutate(plot = map(
+  mutate(plot = future_map(
     text,
     ~ render_paragraph(., data = data_glyphs, ncol = 80, scale = 0.90))
   )
+
+file <- glue::glue("text_lipsum_", sprintf("%02d", p_seed), sprintf("%02d", p_seed_2))
 
 plot_text <- plot_grid(
   plotlist = data_text$plot,
@@ -154,50 +107,8 @@ plot_text <- plot_grid(
 
 ggsave(
   plot_text,
-  file="./R/figures/attractors/text_lipsum.png",
-  dpi=300, width=295, height=210, scale=1, units="mm")
-
-ggsave(
-  plot_text,
-  file="./R/figures/attractors/text_lipsum_square.png",
-  dpi=300, width=210, height=210, scale=1, units="mm")
-```
-
-```{r plot_sars, eval=FALSE}
-# lower resolution from pre-generated glyphs 
-data_characters <- read_rds("data/attractor_set_text.rds") %>% 
-  mutate(
-    xy_ld = map(xy, sample_n, size=250),
-    plot_ld = map(xy_ld, render_plot, size = 0.5, alpha = 0.2)
-  )
-
-# select one glyph per base
-chr_DNA <- c("a"=31, "t"=21847, "g"=3292, "c"=3603)
-
-data_glyphs <- data_characters %>% 
-  filter(pattern %in% chr_DNA) %>%
-  slice(match(chr_DNA, pattern)) %>% 
-  mutate(character = names(chr_DNA))
-
-# get genome sequence (cDNA)
-seq_sars <- read_lines("data/SARS-CoV-2.txt", skip=1)
-
-# select 70x70 last characters
-data_print <- tibble(text=seq_sars) %>% 
-  slice((n()-69):n()) %>% 
-  mutate(plot = future_map(text, render_paragraph, data=data_glyphs, ncol=70, scale=1))
-
-title <- paste(sum(str_length(data_print$text))/1000, "kb")
-footer <- paste(Sys.Date(), title)
-
-plot_text <- plot_grid(plotlist = data_print$plot, ncol=1) +
-  draw_label(footer, x=1, y=0, hjust=1, size=9) +
-  theme(plot.margin = unit(c(1,1,1,1), "cm")) 
-
-ggsave(
-  plot_text,
-  file="./R/figures/attractors/text_sars.png",
-  dpi=300, width=210, height=210, scale=1.5, units="mm")
+  file=glue::glue("R/figures/attractors/{file}.png"),
+  dpi=400, width=295, height=210, scale=1, units="mm", bg = "white")
 
 ```
 

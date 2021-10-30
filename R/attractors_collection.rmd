@@ -7,23 +7,16 @@ This code sample parameter space, filter aesthetic functions based on different 
 
 ```{r setup}
 library(tidyverse)
-library(future)
 library(furrr)
-library(tidygraph)
-library(ggraph)
-library(cowplot)
-
-plan(multisession)
-
-# options
-options(dplyr.summarise.inform=FALSE)
-update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 # functions
-source("R/functions_geometry.r")
-source("R/functions_attractors.r")
-source("R/functions_graph.r")
-source("R/functions_ode.r")
+# remotes::install_github("picasa/generate")
+library(generate)
+
+# options
+plan(multisession)
+options(dplyr.summarise.inform=FALSE)
+update_geom_defaults("point", list(size = 0.1, stroke = 0, shape = 16))
 
 ```
 
@@ -78,7 +71,8 @@ table_collection <- table_set %>%
 # compute quadratic map at high resolution for a random subset of functions
 # post-process xy data (filter early iterations, rescaling)
 # filter rare functions that diverge/converge for large iterations
-set.seed(3)
+p_seed = 3
+set.seed(p_seed)
 
 data_collection <- table_collection %>%
   slice_sample(n = 100) %>% 
@@ -102,16 +96,12 @@ plot_collection <- plot_grid(
   label_fontfamily = "NewCenturySchoolbook") +
   theme(plot.margin = unit(c(1,1,1,1), "cm")) 
 
+file <- sprintf("set_collection_%02d", p_seed)
+
 ggsave(
   plot_collection,
-  file = "./R/figures/attractors/set_collection_03.png",
-  dpi=300, width=format$a2[1], height=format$a2[2], scale=1, units="mm")
-
-# select and save n outputs
-ggsave(
-  data_collection$plot[[1]] + geom_point(alpha= 1/3), 
-  file = "./R/figures/attractors/attractor_test.png",
-  dpi=300, width=format$a4[1], height=format$a4[1], scale=1, units="mm")
+  file = glue::glue("R/figures/attractors/{file}.png"),
+  dpi=300, width = 420, height = 594, scale=1, units="mm")
 
 ```
 
@@ -120,7 +110,7 @@ ggsave(
 
 set.seed(2)
 
-n_plot = 16       # number of parameter combination to sample
+n_plot = 10       # number of parameter combination to sample
 n_iter = 1E6     # number of iterations for the quadratic map
 
 # load results from previously intensive sampling step
@@ -138,22 +128,25 @@ table_collection <- table_set %>%
 # filter rare functions that diverge/converge for large iterations
 data_collection <- table_collection %>%
   slice_sample(n = n_plot) %>% 
-  mutate(xy = future_map(p, ~ iterate(quadratic_map, ., 0, 0, iterations = n_iter))) %>% 
+  mutate(xy = future_map(p, ~ simulate_quadratic(., iterations = n_iter))) %>% 
   filter(map_lgl(xy, ~ with(., all(abs(x) + abs(y) < 1e7)))) %>% 
   filter(map_lgl(xy, ~ density_metric(.) %>% pull(cv) < 2)) %>% 
   mutate(xy = map(xy, ~ normalize_xy(.)))
 
 # compute plots for selected functions
-data_collection <- data_collection %>%
+data_plot <- data_collection %>%
   mutate(
     plot = map(xy, ~ render_plot(., size = 0.1, alpha = 1/3)),
     file = glue::glue("./R/figures/attractors/collection/scatter_{name}.png")
-    ) %>% 
+    )
+
+# export plots
+data_plot %>% 
   mutate(
     s = walk2(file, plot, ~ ggsave(
-      filename = .x, dpi=300, scale=1, bg = "white",
+      filename = .x, dpi = 300, scale=1, bg = "white",
       plot = .y + geom_point(alpha= 1/3),
-      width=format$a4[1], height=format$a4[1], units="mm"
+      width = 210, height = 210, units="mm"
       ))
   )
 
@@ -165,7 +158,7 @@ data_collection <- data_collection %>%
 
 set.seed(1)
 
-n_plot = 12       # number of parameter combination to sample
+n_plot = 5       # number of parameter combination to sample
 n_iter = 1E5     # number of iterations for the quadratic map
 n_sample = 2500  # number of points to sample before building the RN graph.
 
@@ -194,16 +187,18 @@ data_collection <- table_collection %>%
     layout = map(xy, ~ slice_sample(., n = n_sample)))
 
 # render plots and export
-data_collection <- data_collection %>%
+data_plot <- data_collection %>%
   mutate(
     plot = future_map(layout, ~ render_graph(
         ., graph = "rng", k = NA, aes = "line", width = 0.3, coord = coord_fixed())),
     file = glue::glue("./R/figures/attractors/collection/graph_rn_{name}.png")
-    ) %>% 
+    )
+
+data_plot %>% 
   mutate(
     s = walk2(file, plot, ~ ggsave(
       filename = .x, plot = .y , dpi = 300, scale = 1, bg = "white",
-      width=format$a4[1], height=format$a4[1], units="mm"
+      width = 210, height = 210, units="mm"
       ))
   )
 
