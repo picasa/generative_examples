@@ -47,7 +47,7 @@ data_characters <- read_rds("data/attractor_set_text.rds")
 p_seed = 1
 set.seed(p_seed)
 
-data_text <- tibble(character=sample(20:60, size=9, replace = TRUE)) %>% 
+data_text <- tibble(character = sample(20:60, size=9, replace = TRUE)) %>% 
   mutate(sequence = future_map(
     character, ~ render_sequence(., data=data_characters$plot, length=60)))
 

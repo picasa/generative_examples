@@ -32,13 +32,13 @@ p_lmax = 3000
 p_angle = 40
 p_shift = 4
 p_width = c(0,10)
-p_shape = "spline"
+p_render = "spline"
 
 # seeds 4, 8, 11
 data_dense <- gen_node(
   n = p_node, imax = p_imax, lmax = p_lmax,
   amin = -p_angle, amax = p_angle, 
-  shift = p_shift, width = p_width, seed = p_seed, shape=p_shape)
+  shift = p_shift, width = p_width, seed = p_seed, method = p_render)
 
 plot <- data_dense %>%
   render_node(radius = 0, margin = 10,
@@ -64,7 +64,7 @@ p_imax = 50
 p_lmax = 400
 p_angle = 15
 p_width = c(0,8)
-p_shape = "spline"
+p_render = "spline"
 
 # generate n nodes
 set.seed(p_seed)
@@ -84,7 +84,7 @@ data_node <- data_population %>%
       list(shift, scale),
       ~ gen_node(
         n = p_leaf, imax = p_imax, lmax = p_lmax, amin = -p_angle, amax = p_angle, 
-        shift = ..1, scale = ..2, width = p_width, shape = p_shape))
+        shift = ..1, scale = ..2, width = p_width, method = p_render))
   )
 
 # change position of nodes in 2D space
@@ -146,11 +146,11 @@ data_node <- data_topology %>%
     ))
 
 # generate stem geometry and node transformation parameters
-data_stem <- gen_leaf(p_stem, a=p_stem_angle) %>% slice(1:p_node) %>% 
+data_stem <- gen_leaf(p_stem, a = p_stem_angle) %>% slice(1:p_node) %>% 
   mutate(across(x:yend, ~ . * p_scale)) %>% 
   mutate(
     n = rev(n),
-    a = seq_alt(n=p_node, m=p_node_angle[1], sd=p_node_angle[2]),
+    a = seq_alt(n = p_node, m = p_node_angle[1], sd = p_node_angle[2]),
     a = (a + angle) * pi/180) 
 
 # merge stem and node data

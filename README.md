@@ -1,9 +1,10 @@
 # Exploration of generative art with \#rstats
 
-The full versions of the digital outputs are hosted in my art [website](https://casadebaig.netlify.app).
-The code in this repository is released under a [BSD](https://github.com/picasa/generative/blob/master/LICENSE.md) licence.  
-
 ![README](R/figures/00_examples/readme.png?raw=true "README")
+
+This repository illustrates the use of my toolbox package [*generate*](https://github.com/picasa/generate), with the  examples presented below. Additional examples are presented on my art [website](https://casadebaig.netlify.app/), more to explain the logic underlying the algorithms rather than step by step code.
+
+The code in this repository is released under a [BSD](https://github.com/picasa/generative_examples/blob/master/LICENSE.md) licence.  
 
 ------------------------------------------------------------------------
 
